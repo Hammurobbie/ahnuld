@@ -1,318 +1,174 @@
-import asyncio
 import os
-import sys
-import requests
-import json
 import time
+import asyncio
 
-from play_audio import play_audio
 from pywizlight import wizlight, PilotBuilder
-from capture_environmental_colors import capture_environmental_colors
+from play_audio import play_audio
+from hue_api import rgb_to_xy, set_light_state, get_all_light_ids, activate_scene
 
-_HUE_BASE = f"http://{os.environ.get('HUE_BRIDGE_IP', '')}/api/{os.environ.get('HUE_API_KEY', '')}"
+ALL_LIGHTS = list(range(1, 15))
+THEATER_LIGHTS = [5, 6, 7, 13, 14]
+STANDARD_LIGHTS = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
 
-async def main():
-    codes = sys.argv
-    if len(codes) < 2:
-        codes.append("")
+SCENE_THEMES = {
+    "fairfax":     "K0mIvJNac9-6CnL",
+    "snowday":     "MZejKTLSy-cZsn4f",
+    "moonlight":   "1ofOoEOk2gavw0BN",
+    "ibiza":       "FRYZyq4vHCy6fNqg",
+    "osaka":       "1advVnvQsMVBKcJd",
+    "dreamydusk":  "k1AQMyRm1jmxpQaZ",
+    "singapore":   "nmUphMMPpDa3220I",
+    "galaxy":      "6btFza2Zi46dH09",
+    "tokyo":       "C6zGdPF-UtFxn6N",
+    "lavalamp":    "WbJ9oaRrFRnbuBDt",
+}
 
-    hueLights = None
-    ledLights = None
+COLOR_THEMES = {
+    "midnightinparis": {"rgb": (200, 50, 0),   "bri": 125},
+    "moonrisekingdom": {"rgb": (200, 50, 0),   "bri": 254},
+    "speakeasy":       {"rgb": (245, 112, 0),  "bri": 223},
+    "prestige":        {"rgb": (200, 80, 20),  "bri": 255},
+    "shmash":          {"rgb": (220, 50, 0),   "rgb2": (220, 50, 0),   "bri": 100, "lights": ALL_LIGHTS},
+    "cherryblossom":   {"rgb": (200, 80, 40),  "rgb2": (250, 50, 50),  "bri": 175, "lights": STANDARD_LIGHTS},
+    "cyberpunk":       {"rgb": (250, 0, 80),   "rgb2": (0, 220, 252),  "bri": 254, "lights": STANDARD_LIGHTS},
+    "bladerunner":     {"rgb": (255, 60, 0),   "rgb2": (0, 200, 250),  "bri": 254, "lights": STANDARD_LIGHTS},
+    "alien":           {"rgb": (0, 128, 0),    "rgb2": (255, 255, 1),  "bri": 254, "lights": STANDARD_LIGHTS},
+    "godfather":       {"rgb": (250, 0, 0),    "rgb2": (255, 55, 1),   "bri": 120, "lights": STANDARD_LIGHTS},
+    "brucealmighty":   {"rgb": (250, 250, 250),"rgb2": (250, 250, 250),"bri": 255, "lights": ALL_LIGHTS},
+    "titanic":         {"rgb": (0, 0, 250),    "rgb2": (0, 50, 250),   "bri": 120, "lights": ALL_LIGHTS},
+}
 
+WIZ_FALLBACK_RGB = (245, 112, 0)
+WIZ_FALLBACK_BRI = 223
+
+
+def _apply_alternating_colors(lights, rgb, rgb2, bri, video_mode=False):
+    xy1 = rgb_to_xy(*rgb)
+    xy2 = rgb_to_xy(*rgb2)
+    pay1 = {"on": True, "bri": bri, "xy": xy1}
+    pay2 = {"on": True, "bri": bri, "xy": xy2}
+
+    for i, light_id in enumerate(lights):
+        state = pay2.copy() if (i % 2) else pay1.copy()
+
+        if video_mode:
+            if light_id == 1:
+                state = {"on": False}
+            elif light_id in THEATER_LIGHTS:
+                state["bri"] = 25
+
+        set_light_state(light_id, state)
+        time.sleep(0.25)
+
+
+async def _set_wiz_bulbs(bulbs, rgb=None, brightness=None):
+    try:
+        if rgb and brightness:
+            pb = PilotBuilder(rgb=rgb, brightness=brightness)
+        elif brightness:
+            pb = PilotBuilder(brightness=brightness)
+        else:
+            return
+        await asyncio.gather(*(bulb.turn_on(pb) for bulb in bulbs))
+    except Exception:
+        pass
+
+
+async def activate_theme(theme, led_lights=None):
     wiz_ips = [ip.strip() for ip in os.environ.get("WIZ_BULB_IPS", "").split(",") if ip.strip()]
     bulbs = [wizlight(ip) for ip in wiz_ips]
 
-    theme = codes[1]
-    if len(codes) > 2 and codes[2]:
-        ledLights = codes[2]
+    is_video_mode = theme == "videomode"
 
-    is_video_mode = theme in ["videomode"]
+    if led_lights and not is_video_mode:
+        led_lights.set_color("thinking")
 
-    if not is_video_mode:
-        ledLights.set_color("thinking")
+    def success():
+        if led_lights:
+            led_lights.set_color("success")
+            led_lights.change_after(6, "idle")
+            time.sleep(2)
 
-    def success_lights():
-        ledLights.set_color("success")
-        ledLights.change_after(6, "idle")
-        time.sleep(2)
+    def error():
+        if led_lights:
+            led_lights.set_color("error")
+            play_audio("idk")
+            led_lights.change_after(6, "idle")
+            time.sleep(2)
 
-    def error_lights():
-        ledLights.set_color("error")
-        play_audio("idk")
-        ledLights.change_after(6, "idle")
-        time.sleep(2)
+    # --- Special themes with custom per-light logic ---
 
-    if theme in ["sleep"]:
-        hue_ids = [2, 4, 8, 10]
-        url_base = f"{_HUE_BASE}/lights"
-
-        for hue_id in hue_ids:
-            url = f"{url_base}/{hue_id}/state"
-            payload = json.dumps({"on": False})
-            requests.put(url, payload)
-        success_lights()
+    if theme == "sleep":
+        for hue_id in [2, 4, 8, 10]:
+            set_light_state(hue_id, {"on": False})
+        success()
         return
 
-    elif theme in ["read"]:
-        hue_ids = [2, 4, 8, 10]
-        url_base = f"{_HUE_BASE}/lights"
-
-        for hue_id in hue_ids:
-            url = f"{url_base}/{hue_id}/state"
-            payload = json.dumps({
-                "on": True,
-                "bri": 120,
-                "xy": [0.57, 0.412]
-            })
-            requests.put(url, payload)
-
+    if theme == "read":
+        for hue_id in [2, 4, 8, 10]:
+            set_light_state(hue_id, {"on": True, "bri": 120, "xy": [0.57, 0.412]})
         for hue_id in [8, 10]:
-            url = f"{url_base}/{hue_id}/state"
-            payload = json.dumps({"on": False})
-            requests.put(url, payload)
-        success_lights()
+            set_light_state(hue_id, {"on": False})
+        success()
         return
 
-    elif theme in ["cinema"]:
-        theater_hue_ids = [5, 6, 7, 13, 14]
-        hue_ids = [2, 4, 3, 8, 10, 9, 11, 12]
-        url_base = f"{_HUE_BASE}/lights"
+    if theme == "cinema":
+        set_light_state(1, {"on": False})
+        for hue_id in THEATER_LIGHTS:
+            set_light_state(hue_id, {"on": True, "bri": 25})
+        for hue_id in [2, 4, 3, 8, 10, 9, 11, 12]:
+            set_light_state(hue_id, {"on": True, "bri": 75})
+        await _set_wiz_bulbs(bulbs, brightness=20)
+        success()
+        return
 
-        url = f"{url_base}/1/state"
-        payload = json.dumps({"on": False})
-        requests.put(url, payload)
-
-        for hue_id in theater_hue_ids:
-            url = f"{url_base}/{hue_id}/state"
-            payload = json.dumps({
-                "on": True,
-                "bri": 25,
-            })
-            requests.put(url, payload)
-
-        for hue_id in hue_ids:
-            url = f"{url_base}/{hue_id}/state"
-            payload = json.dumps({
-                "on": True,
-                "bri": 75,
-            })
-            requests.put(url, payload)
-
-        success_lights()
-
-    elif theme in ["midnightinparis"]:
-        r, g, b, br = 200, 50, 0, 125
-
-    elif theme in ["moonrisekingdom"]:
-        r, g, b, br = 200, 50, 0, 254
-
-    elif theme in ["speakeasy"]:
-        r, g, b, br = 245, 112, 0, 223
-
-    elif theme in ["shmash"]:
-        hueLights = list(range(1, 15))
-        r, g, b, r2, g2, b2, br = 220, 50, 0, 220, 50, 0, 100
-
-    elif theme in ["cherryblossom"]:
-        hueLights = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
-        r, g, b, r2, g2, b2, br = 200, 80, 40, 250, 50, 50, 175
-
-    elif theme in ["cyberpunk"]:
-        hueLights = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
-        r, g, b, r2, g2, b2, br = 250, 0, 80, 0, 220, 252, 254
-
-    elif theme in ["bladerunner"]:
-        hueLights = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
-        r, g, b, r2, g2, b2, br = 255, 60, 0, 0, 200, 250, 254
-
-    elif theme in ["alien"]:
-        hueLights = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
-        r, g, b, r2, g2, b2, br = 0, 128, 0, 255, 255, 1, 254
-
-    elif theme in ["godfather"]:
-        hueLights = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
-        r, g, b, r2, g2, b2, br = 250, 0, 0, 255, 55, 1, 120
-
-    elif theme in ["brucealmighty"]:
-        hueLights = list(range(1, 15))
-        r, g, b, r2, g2, b2, br = 250, 250, 250, 250, 250, 250, 255
-
-    elif theme in ["titanic"]:
-        hueLights = list(range(1, 15))
-        r, g, b, r2, g2, b2, br = 0, 0, 250, 0, 50, 250, 120
-
-    elif theme in ["prestige"]:
-        hueLights = list(range(1, 15))
-        r, g, b, br = 200, 80, 20, 255
-
-    elif theme in ["videomode"]:
-        ledLights.stop()
-        hueLights = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
+    if is_video_mode:
+        if led_lights:
+            led_lights.stop()
+        from capture_environmental_colors import capture_environmental_colors
         colors = capture_environmental_colors()
-
-        if colors and len(colors) >= 2:
-            r, g, b = colors[0][0], colors[0][1], colors[0][2]
-            r2, g2, b2 = colors[1][0], colors[1][1], colors[1][2]
-            br = 75
-        else:
-            error_lights()
+        if not colors or len(colors) < 2:
+            error()
             return
-
-    elif theme in ["fairfax"]:
-        payload = {"on": True, "scene": "K0mIvJNac9-6CnL"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["snowday"]:
-        payload = {"on": True, "scene": "MZejKTLSy-cZsn4f"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["moonlight"]:
-        payload = {"on": True, "scene": "1ofOoEOk2gavw0BN"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["ibiza"]:
-        payload = {"on": True, "scene": "FRYZyq4vHCy6fNqg"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["osaka"]:
-        payload = {"on": True, "scene": "1advVnvQsMVBKcJd"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["dreamydusk"]:
-        payload = {"on": True, "scene": "k1AQMyRm1jmxpQaZ"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["singapore"]:
-        payload = {"on": True, "scene": "nmUphMMPpDa3220I"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-
-    elif theme in ["galaxy"]:
-        payload = {"on": True, "scene": "6btFza2Zi46dH09"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-    elif theme in ["tokyo"]:
-        payload = {"on": True, "scene": "C6zGdPF-UtFxn6N"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-    elif theme in ["lavalamp"]:
-        payload = {"on": True, "scene": "WbJ9oaRrFRnbuBDt"}
-        requests.put(
-            f"{_HUE_BASE}/groups/4/action",
-            json.dumps(payload)
-        )
-    else:
-        error_lights()
+        rgb = tuple(colors[0])
+        rgb2 = tuple(colors[1])
+        _apply_alternating_colors(STANDARD_LIGHTS, rgb, rgb2, 75, video_mode=True)
+        await _set_wiz_bulbs(bulbs, brightness=20)
+        success()
         return
 
+    # --- Scene themes (Hue Bridge scenes) ---
 
-    if hueLights and theme != "prestige":
-        X = r * 0.649926 + g * 0.103455 + b * 0.197109
-        Y = r * 0.234327 + g * 0.743075 + b * 0.022598
-        Z = r * 0.0 + g * 0.053077 + b * 1.035763
+    if theme in SCENE_THEMES:
+        activate_scene(SCENE_THEMES[theme])
+        await _set_wiz_bulbs(bulbs, rgb=WIZ_FALLBACK_RGB, brightness=WIZ_FALLBACK_BRI)
+        success()
+        return
 
-        x = round(X / (X + Y + Z), 4)
-        y = round(Y / (X + Y + Z), 4)
-        pyPay = {"on": True, "bri": br, "xy": [x, y]}
+    # --- Color themes ---
 
-        if "r2" in locals():
-            X2 = r2 * 0.649926 + g2 * 0.103455 + b2 * 0.197109
-            Y2 = r2 * 0.234327 + g2 * 0.743075 + b2 * 0.022598
-            Z2 = r2 * 0.0 + g2 * 0.053077 + b2 * 1.035763
+    if theme in COLOR_THEMES:
+        cfg = COLOR_THEMES[theme]
+        rgb = cfg["rgb"]
+        rgb2 = cfg.get("rgb2")
+        bri = cfg["bri"]
+        lights = cfg.get("lights")
 
-            x2 = round(X2 / (X2 + Y2 + Z2), 4)
-            y2 = round(Y2 / (X2 + Y2 + Z2), 4)
-            pyPay2 = {"on": True, "bri": br, "xy": [x2, y2]}
+        if lights:
+            _apply_alternating_colors(lights, rgb, rgb2 or rgb, bri)
         else:
-            pyPay2 = pyPay
+            xy = rgb_to_xy(*rgb)
+            for lid in get_all_light_ids():
+                set_light_state(lid, {"on": True, "bri": bri, "xy": xy})
 
-        switcher = False
-        for hueLight in hueLights:
-            url = f"{_HUE_BASE}/lights/{hueLight}/state"
-            payload = json.dumps(pyPay2 if switcher else pyPay)
+        await _set_wiz_bulbs(bulbs, rgb=rgb, brightness=bri)
+        success()
+        return
 
-            theater_hue_ids = [5, 6, 7, 13, 14]
+    error()
 
-            if is_video_mode:
-                payload_dict = pyPay2.copy() if switcher else pyPay.copy()
-
-                if hueLight == 1:
-                    payload_dict = {"on": False}
-                elif hueLight in theater_hue_ids:
-                    payload_dict["bri"] = 25
-
-                payload = json.dumps(payload_dict)
-
-            requests.put(url, payload)
-            switcher = not switcher
-            time.sleep(0.25)
-
-        if theme in ["bladerunner", "cyberpunk"]:
-            g2, b2 = 250, 120
-
-    elif theme not in ["snowday", "lavalamp", "fairfax", "galaxy", "moonlight", "ibiza", "dreamydusk", "osaka", "singapore", "tokyo", "cinema"]:
-        responseG = requests.get(
-f"{_HUE_BASE}/lights/"
-        )
-        lights = json.loads(responseG.text)
-
-        X = r * 0.649926 + g * 0.103455 + b * 0.197109
-        Y = r * 0.234327 + g * 0.743075 + b * 0.022598
-        Z = r * 0.0 + g * 0.053077 + b * 1.035763
-
-        x = round(X / (X + Y + Z), 4)
-        y = round(Y / (X + Y + Z), 4)
-
-        pyPay = {"on": True, "bri": br, "xy": [x, y]}
-        for light in lights:
-            url = f"{_HUE_BASE}/lights/{light}/state"
-            requests.put(url, json.dumps(pyPay))
-
-    else:
-        r, g, b, br = 245, 112, 0, 223
-
-    try:
-        pb = PilotBuilder(rgb=(r, g, b), brightness=br)
-
-        if theme in ["cinema", "videomode"]:
-            br = 20
-            pb = PilotBuilder(brightness=br)
-
-        await asyncio.gather(
-            bulbs[0].turn_on(pb),
-            bulbs[1].turn_on(pb),
-            bulbs[2].turn_on(pb),
-            bulbs[3].turn_on(pb),
-        )
-    except Exception as e:
-        # print(f"An error occurred: {e}")
-        pass
-    finally:
-        success_lights()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import sys
+    _theme = sys.argv[1] if len(sys.argv) > 1 else ""
+    asyncio.run(activate_theme(_theme))

@@ -4,7 +4,7 @@ import commands.config as config
 from play_audio import play_audio
 from text_to_speech import text_to_speech
 from turn_off_lights import main as kill_lights
-from turn_on_lights import main as birth_lights
+from turn_on_lights import activate_theme
 
 def throw_error(lights, error=None):
     if error:
@@ -45,10 +45,7 @@ def turn_off_lights(lights, extra=None):
 
 def turn_on_lights(lights, theme=None):
     try:
-        sys.argv = ["turn_on_lights.py"]
-        sys.argv.append(theme)
-        sys.argv.append(lights)
-        asyncio.run(birth_lights())
+        asyncio.run(activate_theme(theme, led_lights=lights))
     except Exception as e:
         throw_error(lights, e)
 
