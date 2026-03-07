@@ -8,7 +8,7 @@ from turn_on_lights import activate_theme
 
 def throw_error(lights, error=None):
     if error:
-        text_to_speech(error)
+        text_to_speech(str(error))
     else:
         play_audio("did_i_do_wrong")
     lights.set_color("error")
@@ -104,7 +104,7 @@ def execute_command(command, lights, text):
         if func_name in globals():
             globals()[func_name](lights, theme)
         else:
-            play_audio("idk")
+            text_to_speech("I don't know that command.")
     except Exception as e:
         throw_error(lights, e)
     finally:

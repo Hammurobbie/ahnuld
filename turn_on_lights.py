@@ -4,6 +4,7 @@ import asyncio
 
 from pywizlight import wizlight, PilotBuilder
 from play_audio import play_audio
+from text_to_speech import text_to_speech
 from hue_api import rgb_to_xy, set_light_state, get_all_light_ids, activate_scene
 
 ALL_LIGHTS = list(range(1, 15))
@@ -92,9 +93,9 @@ async def activate_theme(theme, led_lights=None):
     def error():
         if led_lights:
             led_lights.set_color("error")
-            play_audio("idk")
             led_lights.change_after(6, "idle")
-            time.sleep(2)
+        text_to_speech("I couldn't set that light theme.")
+        time.sleep(2)
 
     # --- Special themes with custom per-light logic ---
 
