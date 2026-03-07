@@ -1,0 +1,13 @@
+# Piper TTS voice models (large binaries; keep .onnx.json in repo)
+piper_voices/*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+venv/
+.env
+
+# Biometric / personal data
+face_embeddings/
