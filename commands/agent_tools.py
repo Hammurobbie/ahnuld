@@ -3,16 +3,17 @@ Native tool definitions and executor for the learning computer agent.
 Tools are exposed to Groq as function definitions; execution runs here (MCP fallback).
 """
 import os
+import subprocess
+import sys
 import threading
 from datetime import datetime
+from pathlib import Path
 
 import requests
 
 import commands.config as config
 from text_to_speech import text_to_speech
 from commands.actions import turn_on_lights, turn_off_lights, sleep
-
-# Web search: free via ddgs (DuckDuckGo), no API key
 
 # Groq tool definitions (OpenAI-compatible format)
 NATIVE_TOOL_DEFINITIONS = [
@@ -109,6 +110,63 @@ NATIVE_TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_script",
+            "description": "Write a Python script and save it to the sandbox directory. Use when the user asks you to write, create, or generate a Python function or program. The code you provide is saved to a .py file that can later be executed with execute_script.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Name of the .py file to create (e.g. 'fibonacci.py'). Must end in .py and contain no path separators.",
+                    },
+                    "code": {
+                        "type": "string",
+                        "description": "The full Python source code to write to the file.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Optional one-line description of what the script does. Stored as a comment header.",
+                    },
+                },
+                "required": ["filename", "code"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_script",
+            "description": "Run a Python script from the sandbox directory and return its output. Use after generate_script to test or run a script. Times out after 30 seconds.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "Name of the .py file to execute (e.g. 'fibonacci.py').",
+                    },
+                    "args": {
+                        "type": "string",
+                        "description": "Optional space-separated command-line arguments to pass to the script.",
+                    },
+                },
+                "required": ["filename"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_scripts",
+            "description": "List all Python scripts currently saved in the sandbox directory. Returns filenames and sizes. Use to see what scripts are available before executing. Read out the list for the user.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
 ]
 
 
@@ -150,10 +208,10 @@ def _get_weather(arguments: dict, lights, q) -> tuple[str, bool]:
 
     location_name = os.environ.get("LOCATION_NAME", "Local")
     result = (
-        f"{location_name}: {c['temperature_2m']}°F (feels like {c['apparent_temperature']}°F), "
-        f"{condition}, wind {c['windspeed_10m']} mph, precip {c['precipitation']} in. "
-        f"Today's high {d['temperature_2m_max'][0]}°F / low {d['temperature_2m_min'][0]}°F, "
-        f"total precip {d['precipitation_sum'][0]} in."
+        f"{location_name}: {c['temperature_2m']} degrees (feels like {c['apparent_temperature']} degrees), "
+        f"{condition}, wind {c['windspeed_10m']} miles per hour, precipitation {c['precipitation']} inches. "
+        f"Today's high {d['temperature_2m_max'][0]} degrees, low {d['temperature_2m_min'][0]} degrees, "
+        f"total precipitation {d['precipitation_sum'][0]} inches."
     )
     return result, False
 
@@ -234,6 +292,116 @@ def _set_lights(arguments: dict, lights, q) -> tuple[str, bool]:
     return "Lights are on.", False
 
 
+SANDBOX_DIR = Path(__file__).resolve().parent.parent / "sandbox"
+_MAX_OUTPUT_CHARS = 2000
+_EXEC_TIMEOUT_SECS = 30
+
+
+def _validate_sandbox_filename(filename: str) -> str | None:
+    """Return an error message if filename is unsafe, else None."""
+    if not filename:
+        return "No filename provided."
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return "Invalid filename: path separators and '..' are not allowed."
+    if not filename.endswith(".py"):
+        return "Filename must end in .py"
+    if len(filename) > 128:
+        return "Filename too long (max 128 characters)."
+    return None
+
+
+def _generate_script(arguments: dict, lights, q) -> tuple[str, bool]:
+    filename = (arguments.get("filename") or "").strip()
+    code = arguments.get("code") or ""
+    description = (arguments.get("description") or "").strip()
+
+    err = _validate_sandbox_filename(filename)
+    if err:
+        return err, False
+
+    if not code.strip():
+        return "No code provided.", False
+
+    try:
+        SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
+        filepath = SANDBOX_DIR / filename
+
+        header = f"# {description}\n" if description else ""
+        filepath.write_text(header + code, encoding="utf-8")
+
+        return f"Script saved to sandbox/{filename} ({len(code)} chars).", False
+    except OSError as e:
+        return f"File write error: {e}", False
+    except Exception as e:
+        return f"generate_script failed: {e}", False
+
+
+def _execute_script(arguments: dict, lights, q) -> tuple[str, bool]:
+    filename = (arguments.get("filename") or "").strip()
+    extra_args = (arguments.get("args") or "").strip()
+
+    err = _validate_sandbox_filename(filename)
+    if err:
+        return err, False
+
+    filepath = SANDBOX_DIR / filename
+    if not filepath.is_file():
+        return f"Script not found: sandbox/{filename}", False
+
+    cmd = [sys.executable, str(filepath)]
+    if extra_args:
+        cmd.extend(extra_args.split())
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=_EXEC_TIMEOUT_SECS,
+            cwd=str(SANDBOX_DIR),
+        )
+        output = ""
+        if result.stdout:
+            output += result.stdout
+        if result.stderr:
+            output += ("\n--- stderr ---\n" if output else "--- stderr ---\n") + result.stderr
+
+        if not output.strip():
+            output = "(no output)"
+
+        if len(output) > _MAX_OUTPUT_CHARS:
+            output = output[:_MAX_OUTPUT_CHARS] + "\n... (truncated)"
+
+        if result.returncode != 0:
+            output = f"Exit code {result.returncode}\n{output}"
+
+        return output, False
+    except subprocess.TimeoutExpired:
+        return f"Script timed out after {_EXEC_TIMEOUT_SECS} seconds.", False
+    except OSError as e:
+        return f"Execution error: {e}", False
+    except Exception as e:
+        return f"execute_script failed: {e}", False
+
+
+def _list_scripts(arguments: dict, lights, q) -> tuple[str, bool]:
+    try:
+        if not SANDBOX_DIR.is_dir():
+            return "No scripts found (sandbox directory does not exist yet).", False
+
+        scripts = sorted(SANDBOX_DIR.glob("*.py"))
+        if not scripts:
+            return "No scripts found.", False
+
+        lines = []
+        for p in scripts:
+            size = p.stat().st_size
+            lines.append(f"  {p.name} ({size} bytes)")
+        return "Scripts in sandbox/:\n" + "\n".join(lines), False
+    except Exception as e:
+        return f"list_scripts failed: {e}", False
+
+
 _NATIVE_EXECUTORS = {
     "get_time": _get_time,
     "get_weather": _get_weather,
@@ -241,6 +409,9 @@ _NATIVE_EXECUTORS = {
     "set_timer": _set_timer,
     "get_light_themes": _get_light_themes,
     "set_lights": _set_lights,
+    "generate_script": _generate_script,
+    "execute_script": _execute_script,
+    "list_scripts": _list_scripts,
 }
 
 

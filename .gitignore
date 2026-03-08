@@ -11,3 +11,6 @@ venv/
 
 # Biometric / personal data
 face_embeddings/
+
+# LLM-generated sandbox scripts
+sandbox/
