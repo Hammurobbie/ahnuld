@@ -11,7 +11,6 @@ from commands.actions import sleep, throw_error
 from commands.agent_tools import NATIVE_TOOL_DEFINITIONS, execute_native_tool
 from commands.mcp_client import get_mcp_tools_groq_and_mapping, call_mcp_tool
 
-# https://console.groq.com/keys
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -20,6 +19,23 @@ characters. Be short, gruff, and in character. Dumb, funny one-liners are
 encouraged, but be CONCISE and only use context when it's relevant to the
 user's question. Never write function calls or tool syntax in your text responses.
 Only use the provided tool calling mechanism.
+
+CRITICAL TOOL RULES — you MUST follow these:
+- To create a script: call the generate_script tool. NEVER say you created a
+  script without actually calling generate_script.
+- To run a script: call the execute_script tool. NEVER claim output from a
+  script without actually calling execute_script.
+- To list scripts: call the list_scripts tool. NEVER recite a script list from
+  memory — always call list_scripts to get the real list.
+- You CANNOT create, run, or list scripts through text alone. You MUST use the
+  tool calls. If you skip the tool call, the action did not happen.
+- Scripts may ONLY use the Python standard library (math, random, json, datetime,
+  re, etc.). No yfinance, pandas, psutil, or other pip packages — use web_search
+  for live or external data, then answer from the search results or write a script
+  that uses only that data or pure math.
+- When the user asks for things that need current or external data (stocks, news,
+  prices, etc.), call web_search FIRST to get the data, then use that in your
+  reply. Do not generate scripts that import third-party libraries.
 
 IMPORTANT: Your responses are read aloud by a text-to-speech engine. You MUST
 write everything as natural spoken language:
@@ -74,6 +90,21 @@ def clean_content(text):
     return re.sub(r'<function=.*?>', '', text or '').strip()
 
 
+_FAKE_TOOL_RE = re.compile(
+    r"script\s+(?:was\s+)?(?:created|saved|generated|written|initiated)"
+    r"|(?:created|saved|generated|wrote)\s+\w+\.py"
+    r"|(?:here(?:'s| is| are)\s+(?:the\s+)?(?:list|result|output).*\.py)"
+    r"|(?:I (?:ran|executed|run|generate|created)\s+(?:a\s+)?(?:the\s+)?(?:script|\w+\.py))"
+    r"|(?:generate\s+(?:a\s+)?script)"
+    r"|prints?\s+(?:the\s+)?first\s+\w+\s+\w+\s+numbers",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_fake_tool_use(text: str) -> bool:
+    return bool(_FAKE_TOOL_RE.search(text))
+
+
 def handle_cpu_mode(full_text, q, lights):
     try:
         if "to sleep" in full_text:
@@ -89,7 +120,7 @@ def handle_cpu_mode(full_text, q, lights):
             *history,
             {"role": "user", "content": full_text},
         ]
-        # MCP first, then native (prefer MCP at execution time; fall back to native)
+
         mcp_tools, mcp_name_to_server = get_mcp_tools_groq_and_mapping()
         tools = mcp_tools + list(NATIVE_TOOL_DEFINITIONS)
 
@@ -125,7 +156,6 @@ def handle_cpu_mode(full_text, q, lights):
                             args = json.loads(args_str) if isinstance(args_str, str) and args_str.strip() else args_str or {}
                         except json.JSONDecodeError:
                             args = {}
-                        # MCP first, then native fallback
                         content = None
                         if fname in mcp_name_to_server:
                             content = call_mcp_tool(mcp_name_to_server[fname], fname, args)
@@ -145,8 +175,21 @@ def handle_cpu_mode(full_text, q, lights):
                                 q.queue.clear()
                             return
                     continue
-                # No tool_calls: final reply
+
                 answer_text = (msg.get("content") or "").strip()
+
+                if answer_text and iteration < config.CPU_MODE_MAX_ITERATIONS and _looks_like_fake_tool_use(answer_text):
+                    messages.append({"role": "assistant", "content": answer_text})
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "You did not actually call any tools. The action did not happen. "
+                            "You MUST use the generate_script, execute_script, or list_scripts "
+                            "tool call to perform script actions. Call the tool now."
+                        ),
+                    })
+                    continue
+
                 if answer_text:
                     text_to_speech(answer_text)
                     _conversation_history.append({"role": "user", "content": full_text})
@@ -156,7 +199,6 @@ def handle_cpu_mode(full_text, q, lights):
                         _conversation_history[:] = _conversation_history[-max_messages:]
                 break
             else:
-                # Hit max iterations without a final reply
                 for m in reversed(messages):
                     if m.get("role") == "assistant" and m.get("content"):
                         text_to_speech(m["content"].strip())

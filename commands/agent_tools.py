@@ -3,13 +3,12 @@ Native tool definitions and executor for the learning computer agent.
 Tools are exposed to Groq as function definitions; execution runs here (MCP fallback).
 """
 import ast
+import logging
 import os
 import re
 import resource
 import shlex
-import shutil
 import subprocess
-import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +19,6 @@ import commands.config as config
 from text_to_speech import text_to_speech
 from commands.actions import turn_on_lights, turn_off_lights, sleep
 
-# Groq tool definitions (OpenAI-compatible format)
 NATIVE_TOOL_DEFINITIONS = [
     {
         "type": "function",
@@ -119,7 +117,7 @@ NATIVE_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "generate_script",
-            "description": "Write a Python script and save it to the sandbox directory. Use when the user asks you to write, create, or generate a Python function or program. The code you provide is saved to a .py file that can later be executed with execute_script. IMPORTANT: Scripts cannot import os, subprocess, shutil, socket, pathlib, or use open(), exec(), eval(). Scripts should compute results and print output only. After calling this tool, do not read code aloud; only confirm save success briefly.",
+            "description": "Write a Python script and save it to the sandbox directory. Use when the user asks you to write, create, or generate a Python function or program. The code you provide is saved to a .py file that can later be executed with execute_script. Scripts may ONLY use the Python standard library (e.g. math, random, json, datetime, re, collections, sys). Use sys.argv to read command-line arguments when the user provides values (execute_script has an 'args' parameter for this). Do NOT use third-party packages like yfinance, pandas, psutil, requests. No open(), exec(), eval(). Compute and print only. After calling this tool, do not read code aloud; only confirm save success briefly.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -303,25 +301,14 @@ _SANDBOX_PYTHON = "/usr/bin/python3"
 _MAX_OUTPUT_CHARS = 2000
 _EXEC_TIMEOUT_SECS = 30
 
-_BLOCKED_MODULES = {
-    "os",
-    "subprocess",
-    "shutil",
-    "socket",
-    "ctypes",
-    "multiprocessing",
-    "signal",
-    "importlib",
-    "pathlib",
-    "builtins",
-    "code",
-    "compileall",
-    "runpy",
-}
+_ALLOWED_IMPORTS = frozenset({
+    "array", "bisect", "calendar", "cmath", "collections", "copy", "datetime",
+    "decimal", "fractions", "functools", "heapq", "itertools", "json", "math",
+    "numbers", "operator", "random", "re", "statistics", "string", "sys", "typing",
+})
 _BLOCKED_BUILTINS = {"exec", "eval", "compile", "__import__", "open"}
 _BLOCKED_REGEX_PATTERNS = (
     r"__import__\s*\(",
-    r"getattr\s*\(",
 )
 
 
@@ -349,12 +336,12 @@ def _audit_code(code: str) -> str | None:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 module = alias.name.split(".", 1)[0]
-                if module in _BLOCKED_MODULES:
-                    return f"Blocked import detected: {module}"
+                if module not in _ALLOWED_IMPORTS:
+                    return f"Only standard library modules are allowed (e.g. math, random, json). '{module}' is not available in the sandbox."
         elif isinstance(node, ast.ImportFrom):
             module = (node.module or "").split(".", 1)[0]
-            if module in _BLOCKED_MODULES:
-                return f"Blocked import detected: {module}"
+            if module not in _ALLOWED_IMPORTS:
+                return f"Only standard library modules are allowed (e.g. math, random, json). '{module}' is not available in the sandbox."
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in _BLOCKED_BUILTINS:
                 return f"Blocked call detected: {node.func.id}()"
@@ -373,7 +360,6 @@ def _sandbox_limits() -> None:
     resource.setrlimit(resource.RLIMIT_AS, (128 * mb, 128 * mb))
     resource.setrlimit(resource.RLIMIT_CPU, (_EXEC_TIMEOUT_SECS, _EXEC_TIMEOUT_SECS))
     resource.setrlimit(resource.RLIMIT_FSIZE, (1 * mb, 1 * mb))
-    resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
 
 
 def _generate_script(arguments: dict, lights, q) -> tuple[str, bool]:
@@ -387,6 +373,9 @@ def _generate_script(arguments: dict, lights, q) -> tuple[str, bool]:
 
     if not code.strip():
         return "No code provided.", False
+
+    if "\n" not in code and "\\n" in code:
+        code = code.replace("\\n", "\n").replace("\\t", "\t")
     audit_error = _audit_code(code)
     if audit_error:
         return f"Security policy violation: {audit_error}", False
@@ -397,14 +386,6 @@ def _generate_script(arguments: dict, lights, q) -> tuple[str, bool]:
 
         header = f"# {description}\n" if description else ""
         filepath.write_text(header + code, encoding="utf-8")
-        try:
-            shutil.chown(filepath, user=_SANDBOX_USER, group=_SANDBOX_USER)
-        except PermissionError:
-            return (
-                f"Script saved to sandbox/{filename}, but ownership could not be set to {_SANDBOX_USER}. "
-                "Run OS hardening setup and try again.",
-                False,
-            )
         return f"Script saved to sandbox/{filename} ({len(code)} chars).", False
     except OSError as e:
         return f"File write error: {e}", False
@@ -424,7 +405,7 @@ def _execute_script(arguments: dict, lights, q) -> tuple[str, bool]:
     if not filepath.is_file():
         return f"Script not found: sandbox/{filename}", False
 
-    cmd = ["sudo", "-n", "-u", _SANDBOX_USER, _SANDBOX_PYTHON, str(filepath)]
+    cmd = [_SANDBOX_PYTHON, "-u", str(filepath)]
     if extra_args:
         cmd.extend(shlex.split(extra_args))
 
