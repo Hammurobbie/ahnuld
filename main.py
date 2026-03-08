@@ -34,7 +34,6 @@ def main():
     time.sleep(1)
     play_audio(random.choice(["hello", "ahnuld"]))
     while True:
-        handle_commands(lights)
         is_motion_detected = detect_motion(lights)
         if not is_motion_detected:
             break

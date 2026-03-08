@@ -79,6 +79,7 @@ def process_sleep_mode(q, rec, lights, speech_heard, speech_timer):
                 lights.set_color("idle")
                 greet(lights, None, q)
                 config.AWAKE = True
+                config.CPU_MODE = True  # wake directly into CPU mode; "learning computer" path kept for revert
                 speech_heard = False
                 speech_timer = time.time()
                 woke_up = True
@@ -136,7 +137,7 @@ def process_awake_mode(lights, q, rec):
         if "learning computer" in full_text:
             config.CPU_MODE = True
             play_audio("absolutely_yeah")
-            lights.set_color("thinking")
+            lights.set_color("idle")
             time.sleep(2)
             with q.mutex:
                 q.queue.clear()
