@@ -3,6 +3,8 @@ MCP client for the learning computer. Connects to configured MCP servers (stdio)
 discovers tools, converts them to Groq format, and executes tool calls.
 Resolution in handle_cpu_mode: try MCP first; on failure or unknown tool, fall back to native.
 """
+from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -107,12 +109,12 @@ def get_mcp_tools_groq_and_mapping() -> tuple[list[dict], dict[str, dict]]:
     servers = getattr(config, "MCP_SERVERS", []) or []
     if not _MCP_AVAILABLE or not servers:
         return [], {}
-    return anyio.run(_async_get_tools_and_mapping, servers)  # type: ignore[union-attr]
+    return anyio.run(_async_get_tools_and_mapping, servers)  # type: ignore[arg-type,union-attr]
 
 
 def call_mcp_tool(server_config: dict, name: str, arguments: dict[str, Any]) -> str | None:
     """Sync entrypoint: call a tool on the given MCP server; return content string or None on failure."""
     if not _MCP_AVAILABLE:
         return None
-    return anyio.run(_async_call_tool, server_config, name, arguments)  # type: ignore[union-attr]
+    return anyio.run(_async_call_tool, server_config, name, arguments)  # type: ignore[arg-type,union-attr]
 

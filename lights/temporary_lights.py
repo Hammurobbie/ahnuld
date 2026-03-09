@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from lights.hue_api import (
     get_current_states,
     restore_states,
@@ -6,6 +8,6 @@ from lights.hue_api import (
 )
 
 
-def activate_scene(theme):
+def activate_scene(theme: str) -> None:
     scene_id = "odfijW-SAEsETap" if theme == "bright" else theme
     _activate_scene(scene_id)

@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import os
 import time
 import asyncio
+from typing import Any
 
 from pywizlight import wizlight, PilotBuilder
 from audio import play_audio, text_to_speech
@@ -42,7 +45,13 @@ WIZ_FALLBACK_RGB = (245, 112, 0)
 WIZ_FALLBACK_BRI = 223
 
 
-def _apply_alternating_colors(lights, rgb, rgb2, bri, video_mode=False):
+def _apply_alternating_colors(
+    lights: list[int],
+    rgb: tuple[int, ...],
+    rgb2: tuple[int, ...],
+    bri: int,
+    video_mode: bool = False,
+) -> None:
     xy1 = rgb_to_xy(*rgb)
     xy2 = rgb_to_xy(*rgb2)
     pay1 = {"on": True, "bri": bri, "xy": xy1}
@@ -61,7 +70,11 @@ def _apply_alternating_colors(lights, rgb, rgb2, bri, video_mode=False):
         time.sleep(0.25)
 
 
-async def _set_wiz_bulbs(bulbs, rgb=None, brightness=None):
+async def _set_wiz_bulbs(
+    bulbs: list[Any],
+    rgb: tuple[int, ...] | None = None,
+    brightness: int | None = None,
+) -> None:
     try:
         if rgb and brightness:
             pb = PilotBuilder(rgb=rgb, brightness=brightness)
@@ -74,7 +87,10 @@ async def _set_wiz_bulbs(bulbs, rgb=None, brightness=None):
         pass
 
 
-async def activate_theme(theme, led_lights=None):
+async def activate_theme(
+    theme: str | None,
+    led_lights: Any = None,
+) -> None:
     wiz_ips = [ip.strip() for ip in os.environ.get("WIZ_BULB_IPS", "").split(",") if ip.strip()]
     bulbs = [wizlight(ip) for ip in wiz_ips]
 
@@ -148,20 +164,20 @@ async def activate_theme(theme, led_lights=None):
     # --- Color themes ---
 
     if theme in COLOR_THEMES:
-        cfg = COLOR_THEMES[theme]
-        rgb = cfg["rgb"]
-        rgb2 = cfg.get("rgb2")
-        bri = cfg["bri"]
-        lights = cfg.get("lights")
+        cfg_theme: Any = COLOR_THEMES[theme]
+        rgb_cfg: tuple[int, ...] = cfg_theme["rgb"]
+        rgb2_cfg: tuple[int, ...] | None = cfg_theme.get("rgb2")
+        bri_cfg: int = cfg_theme["bri"]
+        lights_list: list[int] | None = cfg_theme.get("lights")
 
-        if lights:
-            _apply_alternating_colors(lights, rgb, rgb2 or rgb, bri)
+        if lights_list:
+            _apply_alternating_colors(lights_list, rgb_cfg, rgb2_cfg or rgb_cfg, bri_cfg)
         else:
-            xy = rgb_to_xy(*rgb)
+            xy = rgb_to_xy(*rgb_cfg)
             for lid in get_all_light_ids():
-                set_light_state(lid, {"on": True, "bri": bri, "xy": xy})
+                set_light_state(lid, {"on": True, "bri": bri_cfg, "xy": xy})
 
-        await _set_wiz_bulbs(bulbs, rgb=rgb, brightness=bri)
+        await _set_wiz_bulbs(bulbs, rgb=rgb_cfg, brightness=bri_cfg)
         success()
         return
 

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import os
 import cv2
-import time
 import json
+from typing import Any
 
 from hardware.camera import Camera
 from hardware.control_servo import control_servo
@@ -9,7 +11,7 @@ from face.recognize_face import recognize_face
 from lights import get_current_states, activate_scene, restore_states
 
 
-def save_face(face, idx, img):
+def save_face(face: Any, idx: int, img: Any) -> None:
     base_dir = os.path.dirname(__file__)
     save_dir = os.path.join(base_dir, "faces")
     os.makedirs(save_dir, exist_ok=True)
@@ -28,7 +30,7 @@ def save_face(face, idx, img):
         json.dump(face.embedding.tolist(), f)
 
 
-def capture_new_faces():
+def capture_new_faces() -> None:
     prev_states = get_current_states()
     activate_scene("bright")
     cam = Camera()

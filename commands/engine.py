@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import gc
-import sys
 import json
 import time
 import queue
+from typing import Any
+
 from thefuzz import fuzz
 import sounddevice as sd
 from audio import play_audio
@@ -14,17 +17,19 @@ from commands.actions import (
     greet,
     sleep,
     execute_command,
-    throw_error
+    throw_error,
 )
+from project_types import LightsLike
 from utils import listen_for_speech
 
 SetLogLevel(-1)
 
 model = Model(config.VOSK_MODEL_PATH)
-rec = KaldiRecognizer(model, config.SAMPLE_RATE)
-q = queue.Queue(maxsize=20)
+rec: Any = KaldiRecognizer(model, config.SAMPLE_RATE)
+q: queue.Queue[tuple[float, bytes]] = queue.Queue(maxsize=20)
 
-def callback(indata, frames, time_, status):
+
+def callback(indata: Any, frames: int, time_: Any, status: Any) -> None:
     try:
         if status:
             pass
@@ -51,7 +56,13 @@ def callback(indata, frames, time_, status):
 
 
 
-def process_sleep_mode(q, rec, lights, speech_heard, speech_timer):
+def process_sleep_mode(
+    q: queue.Queue[tuple[float, bytes]],
+    rec: Any,
+    lights: LightsLike,
+    speech_heard: bool,
+    speech_timer: float,
+) -> tuple[bool, float, bool]:
     woke_up = False
     times_up = (time.time() - speech_timer) > 5
 
@@ -90,7 +101,13 @@ def process_sleep_mode(q, rec, lights, speech_heard, speech_timer):
     return speech_heard, speech_timer, woke_up
 
 
-def _accumulate_speech(q, rec, initial_text, pause_timeout=0.8, max_wait=10):
+def _accumulate_speech(
+    q: queue.Queue[tuple[float, bytes]],
+    rec: Any,
+    initial_text: str,
+    pause_timeout: float = 0.8,
+    max_wait: float = 10,
+) -> str:
     """After Vosk finalizes a phrase, keep listening briefly to catch
     continuation speech that was split by a brief pause."""
     accumulated = initial_text
@@ -121,7 +138,11 @@ def _accumulate_speech(q, rec, initial_text, pause_timeout=0.8, max_wait=10):
     return accumulated.strip()
 
 
-def process_awake_mode(lights, q, rec):
+def process_awake_mode(
+    lights: LightsLike,
+    q: queue.Queue[tuple[float, bytes]],
+    rec: Any,
+) -> bool:
     try:
         item = q.get(timeout=0.2)
         data = item[1] if isinstance(item, tuple) else item
@@ -169,7 +190,7 @@ def process_awake_mode(lights, q, rec):
     return False
 
 
-def handle_commands(lights):
+def handle_commands(lights: LightsLike) -> None:
     config.LISTENING = True
     config.AWAKE = False
     last_command_time = time.time()

@@ -1,26 +1,43 @@
-import os, sys, time, random, asyncio
+from __future__ import annotations
+
+import os
+import sys
+import time
+import random
+import asyncio
+import queue
+from typing import Any
+
 from thefuzz import fuzz
+
 import commands.config as config
 from audio import play_audio, text_to_speech
 from lights.turn_off_lights import main as kill_lights
 from lights import activate_theme
 
-def throw_error(lights, error=None):
-    if error:
+from project_types import LightsLike
+
+
+def throw_error(lights: LightsLike, error: Exception | str | None = None) -> None:
+    if error is not None:
         text_to_speech(str(error))
     else:
         play_audio("did_i_do_wrong")
     lights.set_color("error")
     lights.change_after(6, "idle")
 
-def flush_queue(q):
+def flush_queue(q: queue.Queue[Any]) -> None:
     while not q.empty():
         try:
             q.get_nowait()
         except Exception as e:
             break
 
-def greet(lights, extra=None, audio_queue=None):
+def greet(
+    lights: LightsLike,
+    extra: Any = None,
+    audio_queue: queue.Queue[Any] | None = None,
+) -> None:
     if config.AWAKE:
         return
     try:
@@ -32,7 +49,7 @@ def greet(lights, extra=None, audio_queue=None):
     except Exception as e:
         throw_error(lights, e)
 
-def turn_off_lights(lights, extra=None):
+def turn_off_lights(lights: LightsLike, extra: Any = None) -> None:
     try:
         lights.set_color("thinking")
         asyncio.run(kill_lights())
@@ -42,20 +59,20 @@ def turn_off_lights(lights, extra=None):
     except Exception as e:
         throw_error(lights, e)
 
-def turn_on_lights(lights, theme=None):
+def turn_on_lights(lights: LightsLike, theme: str | None = None) -> None:
     try:
         asyncio.run(activate_theme(theme, led_lights=lights))
     except Exception as e:
         throw_error(lights, e)
 
-def sleep(lights, extra=None):
+def sleep(lights: LightsLike, extra: Any = None) -> None:
     try:
         lights.stop()
     except Exception as e:
         throw_error(lights, e)
     config.AWAKE = False
 
-def shut_down(lights, extra=None):
+def shut_down(lights: LightsLike, extra: Any = None) -> None:
     try:
         play_audio("hasta")
         lights.set_color("error")
@@ -64,7 +81,7 @@ def shut_down(lights, extra=None):
     except Exception as e:
         throw_error(lights, e)
 
-def self_destruct(lights, extra=None):
+def self_destruct(lights: LightsLike, extra: Any = None) -> None:
     try:
         options = ["bye", "hasta", "ill_be_back", "scream"]
         play_audio("count_down")
@@ -77,7 +94,11 @@ def self_destruct(lights, extra=None):
     except Exception as e:
         throw_error(lights, e)
 
-def execute_command(command, lights, text):
+def execute_command(
+    command: dict[str, Any],
+    lights: LightsLike,
+    text: str,
+) -> None:
     if config.BUSY:
         return
     config.BUSY = True

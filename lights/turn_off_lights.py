@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import asyncio
 
@@ -5,7 +7,7 @@ from pywizlight import wizlight
 from lights.hue_api import turn_off_all
 
 
-async def main():
+async def main() -> None:
     turn_off_all()
 
     wiz_ips = [ip.strip() for ip in os.environ.get("WIZ_BULB_IPS", "").split(",") if ip.strip()]

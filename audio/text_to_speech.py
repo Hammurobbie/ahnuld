@@ -11,7 +11,7 @@ VOICE_MODEL = os.path.join(_BASE_DIR, "piper_voices", "en_US-arnold-medium.onnx"
 
 voice = PiperVoice.load(VOICE_MODEL)
 
-def text_to_speech(text: str):
+def text_to_speech(text: str) -> None:
     try:
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             tmp_path = tmp.name

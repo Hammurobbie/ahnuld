@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import time
 import random
@@ -14,7 +16,7 @@ os.environ["LIBCAMERA_LOG_LEVELS"] = "*:4"  # 4 = fatal only (libcamera minimum)
 os.environ["INSIGHTFACE_LOG_LEVEL"] = "0"
 
 # Disable Python loggers for these libs: no output, no propagation, no buffer growth
-def _silence_logger(name):
+def _silence_logger(name: str) -> None:
     log = logging.getLogger(name)
     log.setLevel(logging.CRITICAL + 1)  # nothing passes
     log.addHandler(logging.NullHandler())
@@ -34,7 +36,7 @@ from commands.actions import self_destruct
 from commands.engine import handle_commands
 
 
-def main():
+def main() -> None:
     auth_attempts = 0
     lights = LightController()
     lights.set_color("success")

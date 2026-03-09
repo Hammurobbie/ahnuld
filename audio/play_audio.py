@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import io
 import threading
@@ -7,13 +9,14 @@ from queue import Queue
 from datetime import datetime
 from pydub import AudioSegment
 
-MIC_DEVICE_INDEX = 3
-OUTPUT_DEVICE_INDEX = 2
+MIC_DEVICE_INDEX: int = 3
+OUTPUT_DEVICE_INDEX: int = 2
 sd.default.device = (MIC_DEVICE_INDEX, OUTPUT_DEVICE_INDEX)
 
-audio_queue = Queue()
+audio_queue: Queue[tuple[str, bool] | None] = Queue()
 
-def audio_worker():
+
+def audio_worker() -> None:
     while True:
         item = audio_queue.get()
         if item is None:
@@ -56,9 +59,10 @@ def audio_worker():
 
 threading.Thread(target=audio_worker, daemon=True, name="AudioWorker").start()
 
-def play_audio(file_name, is_file=False):
+def play_audio(file_name: str, is_file: bool = False) -> None:
     audio_queue.put((file_name, is_file))
 
-def shutdown_audio():
+
+def shutdown_audio() -> None:
     audio_queue.put(None)
     audio_queue.join()

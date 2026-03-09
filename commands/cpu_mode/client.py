@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import os
 import re
+from typing import Any
 
 import requests
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_API_KEY: str | None = os.environ.get("GROQ_API_KEY")
+GROQ_ENDPOINT: str = "https://api.groq.com/openai/v1/chat/completions"
 
 
-def query_groq(messages, tools=None):
+def query_groq(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Call Groq chat completions and return message payload."""
     headers = {
         "Content-Type": "application/json",
@@ -27,6 +33,6 @@ def query_groq(messages, tools=None):
     return out["choices"][0]["message"]
 
 
-def clean_content(text):
+def clean_content(text: str | None) -> str:
     """Remove malformed function-call tags from assistant messages."""
     return re.sub(r"<function=.*?>", "", text or "").strip()

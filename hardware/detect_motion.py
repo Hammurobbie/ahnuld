@@ -1,7 +1,13 @@
-from gpiozero import MotionSensor
+from __future__ import annotations
+
 import time
 
-def detect_motion(lights):
+from gpiozero import MotionSensor
+
+from project_types import LightsLike
+
+
+def detect_motion(lights: LightsLike) -> bool:
     pir = MotionSensor(17)
     start = time.time()
 
@@ -25,3 +31,4 @@ def detect_motion(lights):
     except Exception:
         # print("[MOTION ERROR]", e)
         pass
+    return False

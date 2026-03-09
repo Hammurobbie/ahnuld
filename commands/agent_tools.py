@@ -2,9 +2,12 @@
 Native tool definitions and executor for the learning computer agent.
 Tools are exposed to Groq as function definitions; execution runs here (MCP fallback).
 """
+from __future__ import annotations
+
 import ast
 import logging
 import os
+import queue
 import re
 import resource
 import shlex
@@ -12,12 +15,14 @@ import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import requests
 
 import commands.config as config
 from audio import text_to_speech
 from commands.actions import turn_on_lights, turn_off_lights, sleep
+from project_types import LightsLike
 
 NATIVE_TOOL_DEFINITIONS = [
     {
@@ -173,14 +178,22 @@ NATIVE_TOOL_DEFINITIONS = [
 ]
 
 
-def _get_time(arguments: dict, lights, q) -> tuple[str, bool]:
+def _get_time(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     now = datetime.now()
     h = now.hour % 12 or 12
     text = f"{now.strftime('%b %d')}, {h:02d}:{now.minute:02d} {'PM' if now.hour >= 12 else 'AM'}"
     return text, False
 
 
-def _get_weather(arguments: dict, lights, q) -> tuple[str, bool]:
+def _get_weather(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     lat = float(os.environ.get("LOCATION_LAT", "0"))
     lon = float(os.environ.get("LOCATION_LON", "0"))
     url = (
@@ -219,7 +232,11 @@ def _get_weather(arguments: dict, lights, q) -> tuple[str, bool]:
     return result, False
 
 
-def _web_search(arguments: dict, lights, q) -> tuple[str, bool]:
+def _web_search(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     query = arguments.get("query", "").strip()
     if not query:
         return "No query provided.", False
@@ -244,7 +261,11 @@ def _web_search(arguments: dict, lights, q) -> tuple[str, bool]:
     return " | ".join(snippets) if snippets else "No useful results.", False
 
 
-def _set_timer(arguments: dict, lights, q) -> tuple[str, bool]:
+def _set_timer(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     seconds = int(arguments.get("seconds", 0))
     label = arguments.get("label", "timer").strip() or "timer"
     if seconds <= 0:
@@ -261,12 +282,20 @@ def _set_timer(arguments: dict, lights, q) -> tuple[str, bool]:
     return f"Timer '{label}' set for {duration}.", False
 
 
-def _get_light_themes(arguments: dict, lights, q) -> tuple[str, bool]:
+def _get_light_themes(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     themes = ", ".join(config.KNOWN_THEMES)
     return themes, False
 
 
-def _set_lights(arguments: dict, lights, q) -> tuple[str, bool]:
+def _set_lights(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     action = (arguments.get("action") or "on").lower().strip()
     raw_theme = (arguments.get("theme") or "").strip() or None
 
@@ -362,7 +391,11 @@ def _sandbox_limits() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (1 * mb, 1 * mb))
 
 
-def _generate_script(arguments: dict, lights, q) -> tuple[str, bool]:
+def _generate_script(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     filename = (arguments.get("filename") or "").strip()
     code = arguments.get("code") or ""
     description = (arguments.get("description") or "").strip()
@@ -393,7 +426,11 @@ def _generate_script(arguments: dict, lights, q) -> tuple[str, bool]:
         return f"generate_script failed: {e}", False
 
 
-def _execute_script(arguments: dict, lights, q) -> tuple[str, bool]:
+def _execute_script(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     filename = (arguments.get("filename") or "").strip()
     extra_args = (arguments.get("args") or "").strip()
 
@@ -442,7 +479,11 @@ def _execute_script(arguments: dict, lights, q) -> tuple[str, bool]:
         return f"execute_script failed: {e}", False
 
 
-def _list_scripts(arguments: dict, lights, q) -> tuple[str, bool]:
+def _list_scripts(
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     try:
         if not SANDBOX_DIR.is_dir():
             return "No scripts found (sandbox directory does not exist yet).", False
@@ -473,7 +514,12 @@ _NATIVE_EXECUTORS = {
 }
 
 
-def execute_native_tool(name: str, arguments: dict, lights, q) -> tuple[str, bool]:
+def execute_native_tool(
+    name: str,
+    arguments: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> tuple[str, bool]:
     """
     Execute a native tool by name. Returns (result_string, exit_cpu_mode).
     exit_cpu_mode is True only for go_to_sleep; caller should exit the agent loop.

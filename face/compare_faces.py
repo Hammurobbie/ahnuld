@@ -1,13 +1,17 @@
+from __future__ import annotations
+
 import os
 import json
+from typing import Any
+
 import numpy as np
 
 
-def cosine_similarity(a, b):
+def cosine_similarity(a: Any, b: Any) -> float:
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 
-def compare_faces(embeddings):
+def compare_faces(embeddings: list[Any]) -> list[str] | bool:
     known_embeddings = []
 
     base_dir = os.path.dirname(__file__)

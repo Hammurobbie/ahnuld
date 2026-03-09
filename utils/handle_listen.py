@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+from typing import Any
+
 import sounddevice as sd
 import numpy as np
 
 
-def is_speech(block, threshold):
+def is_speech(block: Any, threshold: float) -> bool:
     """
     Simple RMS-based VAD (voice activity detection).
     block: np.ndarray audio block
@@ -12,7 +16,11 @@ def is_speech(block, threshold):
     return rms > threshold
 
 
-def listen_for_speech(samplerate=48000, blocksize=1024, threshold=0.03):
+def listen_for_speech(
+    samplerate: int = 48000,
+    blocksize: int = 1024,
+    threshold: float = 0.03,
+) -> Any:  # Generator[Any, None, None]
     """
     Generator that yields audio blocks only when speech is detected.
     Keeps CPU low during silence.

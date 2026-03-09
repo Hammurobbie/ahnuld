@@ -1,14 +1,16 @@
-import cv2
-import time
-import json
+from __future__ import annotations
+
 import colorsys
+import time
+
+import cv2
 import numpy as np
-from collections import Counter
 from hardware.camera import Camera
 from hardware.control_servo import control_servo
 from lights import get_current_states, restore_states, turn_off
 
-def capture_environmental_colors():
+
+def capture_environmental_colors() -> list[list[int]]:
     prev_states = get_current_states()
     turn_off()
 

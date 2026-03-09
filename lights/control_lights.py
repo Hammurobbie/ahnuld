@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 import time
 import threading
+from typing import Any
+
 import adafruit_pixelbuf
 import board
 from adafruit_led_animation.animation.pulse import Pulse
 from adafruit_raspberry_pi5_neopixel_write import neopixel_write
 
+
 class Pi5Pixelbuf(adafruit_pixelbuf.PixelBuf):
-    def __init__(self, pin, size, **kwargs):
+    def __init__(self, pin: Any, size: int, **kwargs: Any) -> None:
         try:
             self._pin = pin
             super().__init__(size=size, **kwargs)
@@ -14,7 +19,7 @@ class Pi5Pixelbuf(adafruit_pixelbuf.PixelBuf):
             # print("[PIXELBUF INIT ERROR]", e)
             pass
 
-    def _transmit(self, buf):
+    def _transmit(self, buf: Any) -> None:
         try:
             neopixel_write(self._pin, buf)
         except Exception:
@@ -22,7 +27,7 @@ class Pi5Pixelbuf(adafruit_pixelbuf.PixelBuf):
             pass
 
 class LightController:
-    def __init__(self):
+    def __init__(self) -> None:
         try:
             self.NEOPIXEL = board.D19
             self.num_pixels = 5
@@ -37,14 +42,14 @@ class LightController:
                 self.NEOPIXEL, self.num_pixels, auto_write=False, byteorder="BGR"
             )
 
-            self.current_color = None
+            self.current_color: Any = None
             self.stop_event = threading.Event()
-            self.thread = None
+            self.thread: Any = None
         except Exception:
             # print("[LIGHTCONTROLLER INIT ERROR]", e)
             pass
 
-    def _pulse_loop(self):
+    def _pulse_loop(self) -> None:
         try:
             pulse = Pulse(
                 self.pixels,
@@ -72,7 +77,7 @@ class LightController:
             # print("[PULSE LOOP INIT ERROR]", e)
             pass
 
-    def set_color(self, color_name):
+    def set_color(self, color_name: str) -> None:
         try:
             if color_name == "idle":
                 self.current_color = self.ORANGE
@@ -93,7 +98,7 @@ class LightController:
             # print("[SET COLOR ERROR]", e)
             pass
 
-    def set_solid(self, color_name):
+    def set_solid(self, color_name: str) -> None:
         try:
             if self.thread is not None and self.thread.is_alive():
                 self.stop_event.set()
@@ -117,7 +122,7 @@ class LightController:
         except Exception:
             pass
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         try:
             if self.thread is not None and self.thread.is_alive():
                 self.stop_event.set()
@@ -128,7 +133,7 @@ class LightController:
         except Exception:
             pass
 
-    def stop(self, fade_time=1.0, steps=20):
+    def stop(self, fade_time: float = 1.0, steps: int = 20) -> None:
         try:
             self.stop_event.set()
             self.thread.join()
@@ -148,7 +153,7 @@ class LightController:
             pass
 
 
-    def change_after(self, seconds: float, mode=None):
+    def change_after(self, seconds: float, mode: str | None = None) -> None:
         def delayed():
             time.sleep(seconds)
             if mode:
@@ -161,7 +166,7 @@ class LightController:
             # print("[STOP ERROR]", e)
             pass
 
-    def is_stopped(self):
+    def is_stopped(self) -> bool:
         try:
             return self.pixels[0] == [0, 0, 0]
         except Exception:

@@ -1,17 +1,22 @@
+from __future__ import annotations
+
 import gc
 import time
 import random
+
 from hardware.camera import Camera
 from audio import play_audio
 from face import compare_faces
 from face import recognize_face
 from lights import get_current_states, activate_scene, restore_states
+from project_types import LightsLike
 
-def access_denied(lights):
+
+def access_denied(lights: LightsLike) -> None:
     lights.set_color("error")
     lights.change_after(6)
 
-def control_camera(lights):
+def control_camera(lights: LightsLike) -> bool | None:
     try:
         prev_states = get_current_states()
         activate_scene("bright")
@@ -39,7 +44,7 @@ def control_camera(lights):
 
                 elif not matches:
                     scan_attempts += 1
-                else:
+                elif isinstance(matches, list):
                     lights.set_color("success")
                     lights.change_after(6)
                     is_robbie = "robbie" in matches
@@ -63,3 +68,4 @@ def control_camera(lights):
         del recognizer
         gc.collect()
         time.sleep(1)
+    return None

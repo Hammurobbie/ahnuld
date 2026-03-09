@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 import cv2
 from picamera2 import Picamera2
@@ -11,10 +14,10 @@ except Exception:
 
 
 class Camera:
-    picam2 = None
-    started = False
+    picam2: Any = None
+    started: bool = False
 
-    def __init__(self):
+    def __init__(self) -> None:
         if Camera.picam2 is None:
             Camera.picam2 = Picamera2()
             config = Camera.picam2.create_preview_configuration(main={"size": (1280, 720)})
@@ -23,22 +26,22 @@ class Camera:
             Camera.started = True
         self.picam2 = Camera.picam2
 
-    def capture_frame(self):
+    def capture_frame(self) -> Any:
         frame = self.picam2.capture_array()
         return cv2.convertScaleAbs(frame, alpha=1.2, beta=30)
 
-    def show(self, frame):
+    def show(self, frame: Any) -> None:
         cv2.imshow("Camera", frame)
 
-    def should_quit(self):
+    def should_quit(self) -> bool:
         return cv2.waitKey(1) & 0xFF == ord('q')
 
-    def close(self):
+    def close(self) -> None:
         cv2.destroyAllWindows()
         Camera.shutdown()
 
     @classmethod
-    def shutdown(cls):
+    def shutdown(cls) -> None:
         if cls.picam2:
             if cls.started:
                 cls.picam2.stop()

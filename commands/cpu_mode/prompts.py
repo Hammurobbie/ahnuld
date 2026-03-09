@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
 
-SYSTEM_MESSAGE = f"""You are an AI assistant who speaks like Arnold Schwarzenegger's 90's sci-fi
+SYSTEM_MESSAGE: str = f"""You are an AI assistant who speaks like Arnold Schwarzenegger's 90's sci-fi
 characters. Be short, gruff, and in character. Dumb, funny one-liners are
 encouraged, but be CONCISE and only use context when it's relevant to the
 user's question. Never write function calls or tool syntax in your text responses.
@@ -48,18 +50,18 @@ question freshly - do not echo or rephrase your previous replies.
 
 Context: location: {os.environ.get('LOCATION_NAME', 'unknown')}"""
 
-PLAN_ONLY_PROMPT = "First reply with only a short plan: step 1, step 2, step 3. Do not call tools yet."
-PLAN_EXECUTE_PROMPT = "Now perform the steps using tools."
-SELF_EVAL_PROMPT = (
+PLAN_ONLY_PROMPT: str = "First reply with only a short plan: step 1, step 2, step 3. Do not call tools yet."
+PLAN_EXECUTE_PROMPT: str = "Now perform the steps using tools."
+SELF_EVAL_PROMPT: str = (
     "If the results above are enough to answer the user, reply with your answer. "
     "Otherwise call another tool."
 )
-FAKE_TOOL_FOLLOWUP_PROMPT = (
+FAKE_TOOL_FOLLOWUP_PROMPT: str = (
     "You did not actually call any tools. The action did not happen. "
     "You MUST use the generate_script, execute_script, or list_scripts "
     "tool call to perform script actions. Call the tool now."
 )
-LIMITATION_FOLLOWUP_PROMPT = (
+LIMITATION_FOLLOWUP_PROMPT: str = (
     "Do that now: use the tools you suggested to fulfill the user's request. "
     "Call the tools now."
 )

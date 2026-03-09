@@ -1,22 +1,25 @@
+from __future__ import annotations
+
 import os
+from typing import Any
 
 # Project root (config lives in commands/)
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-BUSY = False
-AWAKE = False
-CPU_MODE = False
-CPU_MODE_MAX_ITERATIONS = 8
-CPU_MODE_HISTORY_TURNS = 2
-CPU_MODE_PLAN_FIRST = True
-BLOCKSIZE = 8000
-LISTENING = True
-SAMPLE_RATE = 48000
-MIC_DEVICE_INDEX = 1
-VAD_THRESHOLD = 0.03
-VOSK_MODEL_PATH = os.path.join(_ROOT, "audio", "vosk-model-small-en-us-0.15")
+BUSY: bool = False
+AWAKE: bool = False
+CPU_MODE: bool = False
+CPU_MODE_MAX_ITERATIONS: int = 8
+CPU_MODE_HISTORY_TURNS: int = 2
+CPU_MODE_PLAN_FIRST: bool = True
+BLOCKSIZE: int = 8000
+LISTENING: bool = True
+SAMPLE_RATE: int = 48000
+MIC_DEVICE_INDEX: int = 1
+VAD_THRESHOLD: float = 0.03
+VOSK_MODEL_PATH: str = os.path.join(_ROOT, "audio", "vosk-model-small-en-us-0.15")
 
-KNOWN_THEMES = [
+KNOWN_THEMES: list[str] = [
     "sleep",
     "read",
     "cinema",
@@ -52,9 +55,9 @@ KNOWN_THEMES = [
 # MCP_SERVERS = [
 #     {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/pi"]},
 # ]
-MCP_SERVERS = []
+MCP_SERVERS: list[dict[str, Any]] = []
 
-COMMANDS = [
+COMMANDS: list[dict[str, Any]] = [
     {"cmd": "hey arnold", "func": "greet", "args": False},
     {"cmd": "on the lights", "func": "turn_on_lights", "args": True},
     {"cmd": "off the lights", "func": "turn_off_lights", "args": False},

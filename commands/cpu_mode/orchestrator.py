@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import json
+import queue
+from typing import Any
 
 import requests
 
 import commands.config as config
+from project_types import LightsLike
 from audio import play_audio, text_to_speech
 from commands.actions import sleep, throw_error
 from commands.agent_tools import NATIVE_TOOL_DEFINITIONS, execute_native_tool
@@ -44,8 +49,14 @@ def _build_messages(full_text: str) -> list[dict]:
     ]
 
 
-def _execute_tool_calls(tool_calls: list[dict], messages: list[dict], mcp_name_to_server: dict, lights, q) -> bool:
-    assistant_msg = {"role": "assistant", "content": ""}
+def _execute_tool_calls(
+    tool_calls: list[dict[str, Any]],
+    messages: list[dict[str, Any]],
+    mcp_name_to_server: dict[str, Any],
+    lights: LightsLike,
+    q: queue.Queue[Any],
+) -> bool:
+    assistant_msg: dict[str, Any] = {"role": "assistant", "content": ""}
     assistant_msg["tool_calls"] = [
         {
             "id": tc["id"],
@@ -88,7 +99,11 @@ def _execute_tool_calls(tool_calls: list[dict], messages: list[dict], mcp_name_t
     return exit_cpu_mode
 
 
-def handle_cpu_mode(full_text, q, lights):
+def handle_cpu_mode(
+    full_text: str,
+    q: queue.Queue[Any],
+    lights: LightsLike,
+) -> None:
     try:
         if "to sleep" in full_text:
             config.CPU_MODE = False
@@ -163,7 +178,7 @@ def handle_cpu_mode(full_text, q, lights):
             if e.response.status_code == 429:
                 throw_error(lights, "You're out of free tokens, you little broke bitch")
             else:
-                error_msg = f"API error: {e.response_status_code}"
+                error_msg = f"API error: {e.response.status_code}"
                 try:
                     error_detail = e.response.json().get("error", {}).get("message", "")
                     if error_detail:
