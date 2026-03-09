@@ -105,7 +105,7 @@ def _accumulate_speech(
     q: queue.Queue[tuple[float, bytes]],
     rec: Any,
     initial_text: str,
-    pause_timeout: float = 0.8,
+    pause_timeout: float = 1.2,
     max_wait: float = 10,
 ) -> str:
     """After Vosk finalizes a phrase, keep listening briefly to catch
