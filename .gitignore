@@ -3,6 +3,7 @@ piper_voices/*.onnx
 
 # Python
 __pycache__/
+.mypy_cache/
 *.py[cod]
 *.egg-info/
 .eggs/
