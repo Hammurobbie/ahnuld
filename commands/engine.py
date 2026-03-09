@@ -6,7 +6,7 @@ import queue
 from thefuzz import fuzz
 import sounddevice as sd
 from play_audio import play_audio
-from commands.handle_cpu_mode import handle_cpu_mode
+from commands.cpu_mode import handle_cpu_mode
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
 import commands.config as config
