@@ -3,8 +3,7 @@ import json
 import requests
 
 import commands.config as config
-from play_audio import play_audio
-from text_to_speech import text_to_speech
+from audio import play_audio, text_to_speech
 from commands.actions import sleep, throw_error
 from commands.agent_tools import NATIVE_TOOL_DEFINITIONS, execute_native_tool
 from commands.mcp_client import get_mcp_tools_groq_and_mapping, call_mcp_tool

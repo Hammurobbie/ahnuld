@@ -1,5 +1,14 @@
+import logging
+
 import cv2
 from picamera2 import Picamera2
+
+# Disable Picamera2 Python logging (libcamera C++ logs disabled via LIBCAMERA_LOG_LEVELS in main.py)
+try:
+    Picamera2.set_logging(logging.CRITICAL + 1)  # no messages
+except Exception:
+    pass
+
 
 class Camera:
     picam2 = None

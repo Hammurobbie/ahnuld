@@ -2,7 +2,7 @@ import os
 import asyncio
 
 from pywizlight import wizlight
-from hue_api import turn_off_all
+from lights.hue_api import turn_off_all
 
 
 async def main():

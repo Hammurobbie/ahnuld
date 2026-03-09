@@ -16,7 +16,7 @@ from pathlib import Path
 import requests
 
 import commands.config as config
-from text_to_speech import text_to_speech
+from audio import text_to_speech
 from commands.actions import turn_on_lights, turn_off_lights, sleep
 
 NATIVE_TOOL_DEFINITIONS = [

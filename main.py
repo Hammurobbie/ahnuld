@@ -7,21 +7,29 @@ import warnings
 from dotenv import load_dotenv
 load_dotenv()
 
-os.environ["VOSK_LOG_LEVEL"] = "0"
-os.environ["ORT_LOG_LEVEL"] = "0"
-os.environ["LIBCAMERA_LOG_LEVEL"] = "0"
+# Disable all logging from native libs so daemon doesn't accumulate log output / memory
+os.environ["VOSK_LOG_LEVEL"] = "-1"
+os.environ["ORT_LOG_LEVEL"] = "4"   # 4 = fatal only (suppress all else)
+os.environ["LIBCAMERA_LOG_LEVELS"] = "*:4"  # 4 = fatal only (libcamera minimum)
 os.environ["INSIGHTFACE_LOG_LEVEL"] = "0"
 
-logging.getLogger("insightface").setLevel(logging.ERROR)
+# Disable Python loggers for these libs: no output, no propagation, no buffer growth
+def _silence_logger(name):
+    log = logging.getLogger(name)
+    log.setLevel(logging.CRITICAL + 1)  # nothing passes
+    log.addHandler(logging.NullHandler())
+    log.propagate = False
+
+
+for _name in ("insightface", "onnxruntime", "picamera2", "libcamera"):
+    _silence_logger(_name)
 
 warnings.filterwarnings("ignore")
 warnings.filterwarnings("ignore", category=UserWarning, module='gpiozero.output_devices')
 
-from play_audio import play_audio
-from detect_motion import detect_motion
-from control_servo import control_servo
-from control_camera import control_camera
-from control_lights import LightController
+from audio import play_audio
+from hardware import detect_motion, control_servo, control_camera
+from lights import LightController
 from commands.actions import self_destruct
 from commands.engine import handle_commands
 

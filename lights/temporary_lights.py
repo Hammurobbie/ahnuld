@@ -1,4 +1,4 @@
-from hue_api import (
+from lights.hue_api import (
     get_current_states,
     restore_states,
     turn_off_all as turn_off,

@@ -3,8 +3,8 @@ from insightface.app import FaceAnalysis
 import onnxruntime as ort
 import os
 
-# Reduce ONNX/ML thread usage and suppress warnings
-ort.set_default_logger_severity(3)
+# No ONNX logging (daemon: avoid log buffer growth); reduce thread usage
+ort.set_default_logger_severity(4)  # 4 = fatal only, no info/warning
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 

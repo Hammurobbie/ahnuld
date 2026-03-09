@@ -1,3 +1,8 @@
+import os
+
+# Project root (config lives in commands/)
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 BUSY = False
 AWAKE = False
 CPU_MODE = False
@@ -9,7 +14,7 @@ LISTENING = True
 SAMPLE_RATE = 48000
 MIC_DEVICE_INDEX = 1
 VAD_THRESHOLD = 0.03
-VOSK_MODEL_PATH = "vosk-model-small-en-us-0.15"
+VOSK_MODEL_PATH = os.path.join(_ROOT, "audio", "vosk-model-small-en-us-0.15")
 
 KNOWN_THEMES = [
     "sleep",

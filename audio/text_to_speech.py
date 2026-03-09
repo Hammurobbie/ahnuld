@@ -4,10 +4,10 @@ import wave
 import tempfile
 from piper import PiperVoice, SynthesisConfig
 from pydub import AudioSegment
-from play_audio import play_audio, audio_queue
+from audio.play_audio import play_audio, audio_queue
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VOICE_MODEL = os.path.join(BASE_DIR, "piper_voices", "en_US-arnold-medium.onnx")
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+VOICE_MODEL = os.path.join(_BASE_DIR, "piper_voices", "en_US-arnold-medium.onnx")
 
 voice = PiperVoice.load(VOICE_MODEL)
 

@@ -24,7 +24,8 @@ def audio_worker():
             if is_full_path:
                 actual_path = file_path
             else:
-                actual_path = f"ahnuld_audio/{file_path}.wav"
+                _audio_dir = os.path.join(os.path.dirname(__file__), "ahnuld_audio")
+                actual_path = os.path.join(_audio_dir, f"{file_path}.wav")
 
             audio = AudioSegment.from_file(actual_path, format="wav")
 

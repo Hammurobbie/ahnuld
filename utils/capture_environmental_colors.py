@@ -4,9 +4,9 @@ import json
 import colorsys
 import numpy as np
 from collections import Counter
-from camera import Camera
-from control_servo import control_servo
-from temporary_lights import get_current_states, restore_states, turn_off
+from hardware.camera import Camera
+from hardware.control_servo import control_servo
+from lights import get_current_states, restore_states, turn_off
 
 def capture_environmental_colors():
     prev_states = get_current_states()

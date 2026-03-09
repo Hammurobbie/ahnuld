@@ -5,7 +5,7 @@ import time
 import queue
 from thefuzz import fuzz
 import sounddevice as sd
-from play_audio import play_audio
+from audio import play_audio
 from commands.cpu_mode import handle_cpu_mode
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
@@ -16,7 +16,7 @@ from commands.actions import (
     execute_command,
     throw_error
 )
-from handle_listen import listen_for_speech
+from utils import listen_for_speech
 
 SetLogLevel(-1)
 

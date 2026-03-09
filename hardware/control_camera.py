@@ -1,11 +1,11 @@
 import gc
 import time
 import random
-from camera import Camera
-from play_audio import play_audio
-from compare_faces import compare_faces
-from recognize_face import recognize_face
-from temporary_lights import get_current_states, activate_scene, restore_states
+from hardware.camera import Camera
+from audio import play_audio
+from face import compare_faces
+from face import recognize_face
+from lights import get_current_states, activate_scene, restore_states
 
 def access_denied(lights):
     lights.set_color("error")
@@ -63,4 +63,3 @@ def control_camera(lights):
         del recognizer
         gc.collect()
         time.sleep(1)
-

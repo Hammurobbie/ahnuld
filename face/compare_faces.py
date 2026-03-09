@@ -1,14 +1,17 @@
-import numpy as np
-import json
 import os
+import json
+import numpy as np
+
 
 def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
+
 def compare_faces(embeddings):
     known_embeddings = []
 
-    faces_dir = "face_embeddings"
+    base_dir = os.path.dirname(__file__)
+    faces_dir = os.path.join(base_dir, "face_embeddings")
     for file in os.listdir(faces_dir):
         if file.endswith(".json"):
             json_path = os.path.join(faces_dir, file)
@@ -21,7 +24,7 @@ def compare_faces(embeddings):
     for emb in embeddings:
         for known_emb in known_embeddings:
             sim = cosine_similarity(np.array(emb), np.array(known_emb["emb"]))
-            name = known_emb['name'].split('_')[0]
+            name = known_emb["name"].split("_")[0]
             if sim > threshold and name not in matches:
                 matches.append(name)
 

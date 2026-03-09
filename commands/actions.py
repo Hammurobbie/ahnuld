@@ -1,10 +1,9 @@
 import os, sys, time, random, asyncio
 from thefuzz import fuzz
 import commands.config as config
-from play_audio import play_audio
-from text_to_speech import text_to_speech
-from turn_off_lights import main as kill_lights
-from turn_on_lights import activate_theme
+from audio import play_audio, text_to_speech
+from lights.turn_off_lights import main as kill_lights
+from lights import activate_theme
 
 def throw_error(lights, error=None):
     if error:

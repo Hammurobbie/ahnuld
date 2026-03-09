@@ -3,9 +3,8 @@ import time
 import asyncio
 
 from pywizlight import wizlight, PilotBuilder
-from play_audio import play_audio
-from text_to_speech import text_to_speech
-from hue_api import rgb_to_xy, set_light_state, get_all_light_ids, activate_scene
+from audio import play_audio, text_to_speech
+from lights.hue_api import rgb_to_xy, set_light_state, get_all_light_ids, activate_scene
 
 ALL_LIGHTS = list(range(1, 15))
 THEATER_LIGHTS = [5, 6, 7, 13, 14]
@@ -126,7 +125,7 @@ async def activate_theme(theme, led_lights=None):
     if is_video_mode:
         if led_lights:
             led_lights.stop()
-        from capture_environmental_colors import capture_environmental_colors
+        from utils.capture_environmental_colors import capture_environmental_colors
         colors = capture_environmental_colors()
         if not colors or len(colors) < 2:
             error()

@@ -2,13 +2,16 @@ import os
 import cv2
 import time
 import json
-from camera import Camera
-from control_servo import control_servo
-from recognize_face import recognize_face
-from temporary_lights import get_current_states, activate_scene, restore_states
+
+from hardware.camera import Camera
+from hardware.control_servo import control_servo
+from face.recognize_face import recognize_face
+from lights import get_current_states, activate_scene, restore_states
+
 
 def save_face(face, idx, img):
-    save_dir = "faces"
+    base_dir = os.path.dirname(__file__)
+    save_dir = os.path.join(base_dir, "faces")
     os.makedirs(save_dir, exist_ok=True)
 
     box = face.bbox.astype(int)
@@ -54,6 +57,7 @@ def capture_new_faces():
         cam.close()
         Camera.shutdown()
         control_servo(True)
+
 
 if __name__ == "__main__":
     capture_new_faces()
