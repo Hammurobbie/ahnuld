@@ -71,6 +71,7 @@ def sleep(lights: LightsLike, extra: Any = None) -> None:
     except Exception as e:
         throw_error(lights, e)
     config.AWAKE = False
+    config.CPU_MODE = False
 
 def shut_down(lights: LightsLike, extra: Any = None) -> None:
     try:
