@@ -20,7 +20,7 @@ def query_groq(
         "Authorization": f"Bearer {GROQ_API_KEY}",
     }
     payload = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "model": "openai/gpt-oss-120b,
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 550,
