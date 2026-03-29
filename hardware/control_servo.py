@@ -5,6 +5,12 @@ from typing import Any
 import gpiozero
 from time import sleep
 
+# min/max pulse set open/close travel; value -1 hits MIN (full close). If the door hits a hard stop,
+# the servo will buzz while held there — fine for short holds (seconds), bad if left stalled for minutes
+# (heat, gear wear, extra current). Detach (value=None) after close if you ever need long idle closed.
+SERVO_MIN_PULSE = 0.6 / 1000
+SERVO_MAX_PULSE = 2.3 / 1000
+
 
 class ServoController:
     servo: Any = None
@@ -12,9 +18,11 @@ class ServoController:
     @classmethod
     def get_servo(cls) -> Any:
         if cls.servo is None:
-            maxW = 2.5 / 1000
-            minW = 0.7 / 1000
-            cls.servo = gpiozero.Servo(18, min_pulse_width=minW, max_pulse_width=maxW)
+            cls.servo = gpiozero.Servo(
+                18,
+                min_pulse_width=SERVO_MIN_PULSE,
+                max_pulse_width=SERVO_MAX_PULSE,
+            )
             cls.servo.value = 1
         return cls.servo
 
