@@ -105,7 +105,7 @@ def handle_cpu_mode(
     lights: LightsLike,
 ) -> None:
     try:
-        if "to sleep" in full_text:
+        if "go to sleep" in full_text:
             config.CPU_MODE = False
             play_audio("investigations_over")
             sleep(lights)

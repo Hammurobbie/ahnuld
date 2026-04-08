@@ -4,6 +4,7 @@ import os
 import time
 import random
 import logging
+import traceback
 import warnings
 
 from dotenv import load_dotenv
@@ -36,6 +37,13 @@ from commands.actions import self_destruct
 from commands.engine import handle_commands
 
 
+logger = logging.getLogger("ahnuld")
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+
 def main() -> None:
     auth_attempts = 0
     lights = LightController()
@@ -60,4 +68,8 @@ def main() -> None:
         handle_commands(lights)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.critical("Unhandled crash:\n%s", traceback.format_exc())
+        raise
