@@ -22,7 +22,8 @@ from commands.actions import (
 from project_types import LightsLike
 from utils import listen_for_speech
 
-SetLogLevel(-1)
+# silence temrinal output
+# SetLogLevel(-1)
 
 model = Model(config.VOSK_MODEL_PATH)
 rec: Any = KaldiRecognizer(model, config.SAMPLE_RATE)

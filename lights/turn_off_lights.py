@@ -12,7 +12,10 @@ async def main() -> None:
 
     wiz_ips = [ip.strip() for ip in os.environ.get("WIZ_BULB_IPS", "").split(",") if ip.strip()]
     bulbs = [wizlight(ip) for ip in wiz_ips]
-    await asyncio.gather(*(bulb.turn_off() for bulb in bulbs))
+    try:
+        await asyncio.gather(*(bulb.turn_off() for bulb in bulbs))
+    finally:
+        await asyncio.gather(*(bulb.async_close() for bulb in bulbs))
 
 
 if __name__ == "__main__":

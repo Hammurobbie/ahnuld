@@ -94,6 +94,9 @@ async def activate_theme(
     wiz_ips = [ip.strip() for ip in os.environ.get("WIZ_BULB_IPS", "").split(",") if ip.strip()]
     bulbs = [wizlight(ip) for ip in wiz_ips]
 
+    async def _close_bulbs() -> None:
+        await asyncio.gather(*(b.async_close() for b in bulbs))
+
     is_video_mode = theme == "videomode"
 
     if led_lights and not is_video_mode:
@@ -114,74 +117,77 @@ async def activate_theme(
 
     # --- Special themes with custom per-light logic ---
 
-    if theme == "sleep":
-        for hue_id in [2, 4, 8, 10]:
-            set_light_state(hue_id, {"on": False})
-        success()
-        return
-
-    if theme == "read":
-        for hue_id in [2, 4, 8, 10]:
-            set_light_state(hue_id, {"on": True, "bri": 120, "xy": [0.57, 0.412]})
-        for hue_id in [8, 10]:
-            set_light_state(hue_id, {"on": False})
-        success()
-        return
-
-    if theme == "cinema":
-        set_light_state(1, {"on": False})
-        for hue_id in THEATER_LIGHTS:
-            set_light_state(hue_id, {"on": True, "bri": 25})
-        for hue_id in [2, 4, 3, 8, 10, 9, 11, 12]:
-            set_light_state(hue_id, {"on": True, "bri": 75})
-        await _set_wiz_bulbs(bulbs, brightness=20)
-        success()
-        return
-
-    if is_video_mode:
-        if led_lights:
-            led_lights.stop()
-        from utils.capture_environmental_colors import capture_environmental_colors
-        colors = capture_environmental_colors()
-        if not colors or len(colors) < 2:
-            error()
+    try:
+        if theme == "sleep":
+            for hue_id in [2, 4, 8, 10]:
+                set_light_state(hue_id, {"on": False})
+            success()
             return
-        rgb = tuple(colors[0])
-        rgb2 = tuple(colors[1])
-        _apply_alternating_colors(STANDARD_LIGHTS, rgb, rgb2, 75, video_mode=True)
-        await _set_wiz_bulbs(bulbs, brightness=20)
-        success()
-        return
 
-    # --- Scene themes (Hue Bridge scenes) ---
+        if theme == "read":
+            for hue_id in [2, 4, 8, 10]:
+                set_light_state(hue_id, {"on": True, "bri": 120, "xy": [0.57, 0.412]})
+            for hue_id in [8, 10]:
+                set_light_state(hue_id, {"on": False})
+            success()
+            return
 
-    if theme in SCENE_THEMES:
-        activate_scene(SCENE_THEMES[theme])
-        await _set_wiz_bulbs(bulbs, rgb=WIZ_FALLBACK_RGB, brightness=WIZ_FALLBACK_BRI)
-        success()
-        return
+        if theme == "cinema":
+            set_light_state(1, {"on": False})
+            for hue_id in THEATER_LIGHTS:
+                set_light_state(hue_id, {"on": True, "bri": 25})
+            for hue_id in [2, 4, 3, 8, 10, 9, 11, 12]:
+                set_light_state(hue_id, {"on": True, "bri": 75})
+            await _set_wiz_bulbs(bulbs, brightness=20)
+            success()
+            return
 
-    # --- Color themes ---
+        if is_video_mode:
+            if led_lights:
+                led_lights.stop()
+            from utils.capture_environmental_colors import capture_environmental_colors
+            colors = capture_environmental_colors()
+            if not colors or len(colors) < 2:
+                error()
+                return
+            rgb = tuple(colors[0])
+            rgb2 = tuple(colors[1])
+            _apply_alternating_colors(STANDARD_LIGHTS, rgb, rgb2, 75, video_mode=True)
+            await _set_wiz_bulbs(bulbs, brightness=20)
+            success()
+            return
 
-    if theme in COLOR_THEMES:
-        cfg_theme: Any = COLOR_THEMES[theme]
-        rgb_cfg: tuple[int, ...] = cfg_theme["rgb"]
-        rgb2_cfg: tuple[int, ...] | None = cfg_theme.get("rgb2")
-        bri_cfg: int = cfg_theme["bri"]
-        lights_list: list[int] | None = cfg_theme.get("lights")
+        # --- Scene themes (Hue Bridge scenes) ---
 
-        if lights_list:
-            _apply_alternating_colors(lights_list, rgb_cfg, rgb2_cfg or rgb_cfg, bri_cfg)
-        else:
-            xy = rgb_to_xy(*rgb_cfg)
-            for lid in get_all_light_ids():
-                set_light_state(lid, {"on": True, "bri": bri_cfg, "xy": xy})
+        if theme in SCENE_THEMES:
+            activate_scene(SCENE_THEMES[theme])
+            await _set_wiz_bulbs(bulbs, rgb=WIZ_FALLBACK_RGB, brightness=WIZ_FALLBACK_BRI)
+            success()
+            return
 
-        await _set_wiz_bulbs(bulbs, rgb=rgb_cfg, brightness=bri_cfg)
-        success()
-        return
+        # --- Color themes ---
 
-    error()
+        if theme in COLOR_THEMES:
+            cfg_theme: Any = COLOR_THEMES[theme]
+            rgb_cfg: tuple[int, ...] = cfg_theme["rgb"]
+            rgb2_cfg: tuple[int, ...] | None = cfg_theme.get("rgb2")
+            bri_cfg: int = cfg_theme["bri"]
+            lights_list: list[int] | None = cfg_theme.get("lights")
+
+            if lights_list:
+                _apply_alternating_colors(lights_list, rgb_cfg, rgb2_cfg or rgb_cfg, bri_cfg)
+            else:
+                xy = rgb_to_xy(*rgb_cfg)
+                for lid in get_all_light_ids():
+                    set_light_state(lid, {"on": True, "bri": bri_cfg, "xy": xy})
+
+            await _set_wiz_bulbs(bulbs, rgb=rgb_cfg, brightness=bri_cfg)
+            success()
+            return
+
+        error()
+    finally:
+        await _close_bulbs()
 
 
 if __name__ == "__main__":

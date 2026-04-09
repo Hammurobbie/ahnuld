@@ -62,7 +62,7 @@ def main() -> None:
         control_servo(True)
         if is_unauthorized and auth_attempts < 4:
             auth_attempts += 1
-            break
+            continue
         elif is_unauthorized:
             self_destruct(lights)
         handle_commands(lights)
