@@ -244,7 +244,7 @@ def _web_search(
     try:
         from ddgs import DDGS
 
-        results = list(DDGS().text(query, max_results=5, backend="duckduckgo"))
+        results = list(DDGS().text(query, max_results=5))
     except Exception as e:
         return f"Search failed: {e}", False
 

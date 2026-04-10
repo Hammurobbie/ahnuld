@@ -24,7 +24,7 @@ from commands.cpu_mode.prompts import (
     PLAN_EXECUTE_PROMPT,
     PLAN_ONLY_PROMPT,
     SELF_EVAL_PROMPT,
-    SYSTEM_MESSAGE,
+    get_system_message,
 )
 
 _conversation_history: list[dict] = []
@@ -39,14 +39,24 @@ def _append_history(user_text: str, answer_text: str) -> None:
         _conversation_history[:] = _conversation_history[-max_messages:]
 
 
+_FOLLOWUP_MAX_WORDS = 4
+
+
 def _build_messages(full_text: str) -> list[dict]:
     history_turns = getattr(config, "CPU_MODE_HISTORY_TURNS", 5) or 0
-    history = _conversation_history[-(2 * history_turns) :] if history_turns else []
+    word_count = len(full_text.split())
+    if history_turns and word_count <= _FOLLOWUP_MAX_WORDS:
+        history = _conversation_history[-(2 * history_turns) :]
+    else:
+        history = []
     return [
-        {"role": "system", "content": SYSTEM_MESSAGE},
+        {"role": "system", "content": get_system_message()},
         *history,
         {"role": "user", "content": full_text},
     ]
+
+
+_MAX_SEARCH_CALLS_PER_TURN = 2
 
 
 def _execute_tool_calls(
@@ -55,7 +65,8 @@ def _execute_tool_calls(
     mcp_name_to_server: dict[str, Any],
     lights: LightsLike,
     q: queue.Queue[Any],
-) -> bool:
+    search_count: int,
+) -> tuple[bool, int]:
     assistant_msg: dict[str, Any] = {"role": "assistant", "content": ""}
     assistant_msg["tool_calls"] = [
         {
@@ -80,11 +91,16 @@ def _execute_tool_calls(
         except json.JSONDecodeError:
             args = {}
 
-        content = None
-        if fname in mcp_name_to_server:
-            content = call_mcp_tool(mcp_name_to_server[fname], fname, args)
-        if content is None:
-            content, exit_cpu_mode = execute_native_tool(fname, args, lights, q)
+        if fname == "web_search" and search_count >= _MAX_SEARCH_CALLS_PER_TURN:
+            content = "Search limit reached. Use the results you already have."
+        else:
+            content = None
+            if fname in mcp_name_to_server:
+                content = call_mcp_tool(mcp_name_to_server[fname], fname, args)
+            if content is None:
+                content, exit_cpu_mode = execute_native_tool(fname, args, lights, q)
+            if fname == "web_search":
+                search_count += 1
 
         messages.append(
             {
@@ -96,7 +112,7 @@ def _execute_tool_calls(
         )
 
     messages.append({"role": "user", "content": SELF_EVAL_PROMPT})
-    return exit_cpu_mode
+    return exit_cpu_mode, search_count
 
 
 def handle_cpu_mode(
@@ -122,6 +138,7 @@ def handle_cpu_mode(
 
         try:
             iteration = 0
+            search_count = 0
             while iteration < config.CPU_MODE_MAX_ITERATIONS:
                 iteration += 1
                 run_plan_round = plan_round_enabled and not plan_round_done and iteration == 1
@@ -134,7 +151,9 @@ def handle_cpu_mode(
 
                 tool_calls = msg.get("tool_calls")
                 if tool_calls:
-                    exit_cpu_mode = _execute_tool_calls(tool_calls, messages, mcp_name_to_server, lights, q)
+                    exit_cpu_mode, search_count = _execute_tool_calls(
+                        tool_calls, messages, mcp_name_to_server, lights, q, search_count,
+                    )
                     if exit_cpu_mode:
                         config.BUSY = False
                         with q.mutex:
