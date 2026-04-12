@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import queue
 from typing import Any
 
@@ -26,6 +27,8 @@ from commands.cpu_mode.prompts import (
     SELF_EVAL_PROMPT,
     get_system_message,
 )
+
+logger = logging.getLogger("ahnuld.cpu_mode")
 
 _conversation_history: list[dict] = []
 
@@ -59,6 +62,53 @@ def _build_messages(full_text: str) -> list[dict]:
 _MAX_SEARCH_CALLS_PER_TURN = 2
 
 
+def _spoken_message_for_groq_http(status_code: int) -> str:
+    """Short TTS-friendly line; full detail is logged separately."""
+    if status_code == 400:
+        return "The brain rejected that request. See the log for details."
+    if status_code in (401, 403):
+        return "API key or access problem. See the log."
+    if status_code >= 500:
+        return "The brain service is having trouble. Try again later."
+    return f"Brain service error, status {status_code}. See the log."
+
+
+def _log_groq_http_error(e: requests.exceptions.HTTPError) -> str:
+    """Log response body and return API error.message when JSON, else empty."""
+    resp = e.response
+    detail = ""
+    body_preview = ""
+    try:
+        body_preview = (resp.text or "")[:16000]
+    except Exception:
+        body_preview = "(could not read response body)"
+    try:
+        err = resp.json().get("error", {})
+        if isinstance(err, dict):
+            detail = str(err.get("message", "") or "")
+    except Exception:
+        pass
+    logger.error(
+        "Groq API HTTP %s: %s | body: %s",
+        resp.status_code,
+        detail or "(no JSON message)",
+        body_preview,
+    )
+    return detail
+
+
+def _tool_call_arguments_as_json_string(raw: Any) -> str:
+    """Groq/OpenAI require tool_calls[].function.arguments to be a JSON string on replay."""
+    if raw is None:
+        return "{}"
+    if isinstance(raw, str):
+        s = raw.strip()
+        return s if s else "{}"
+    if isinstance(raw, (dict, list)):
+        return json.dumps(raw)
+    return str(raw)
+
+
 def _execute_tool_calls(
     tool_calls: list[dict[str, Any]],
     messages: list[dict[str, Any]],
@@ -74,7 +124,9 @@ def _execute_tool_calls(
             "type": "function",
             "function": {
                 "name": tc["function"]["name"],
-                "arguments": tc["function"].get("arguments", "{}"),
+                "arguments": _tool_call_arguments_as_json_string(
+                    tc["function"].get("arguments"),
+                ),
             },
         }
         for tc in tool_calls
@@ -86,8 +138,12 @@ def _execute_tool_calls(
         tid = tc["id"]
         fname = tc["function"]["name"]
         try:
-            args_str = tc["function"].get("arguments") or "{}"
-            args = json.loads(args_str) if isinstance(args_str, str) and args_str.strip() else args_str or {}
+            raw_args = tc["function"].get("arguments")
+            if isinstance(raw_args, dict):
+                args = raw_args
+            else:
+                args_str = _tool_call_arguments_as_json_string(raw_args)
+                args = json.loads(args_str) if args_str.strip() else {}
         except json.JSONDecodeError:
             args = {}
 
@@ -195,18 +251,14 @@ def handle_cpu_mode(
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 429:
-                throw_error(lights, "You're out of free tokens, you little broke bitch")
+                _log_groq_http_error(e)
+                throw_error(lights, "You're out of free tokens, you little broke bitch.")
             else:
-                error_msg = f"API error: {e.response.status_code}"
-                try:
-                    error_detail = e.response.json().get("error", {}).get("message", "")
-                    if error_detail:
-                        error_msg = f"API error: {error_detail}"
-                except Exception:
-                    pass
-                throw_error(lights, error_msg)
+                _log_groq_http_error(e)
+                throw_error(lights, _spoken_message_for_groq_http(e.response.status_code))
         except requests.exceptions.RequestException as e:
-            throw_error(lights, f"Connection error: {str(e)}")
+            logger.error("Groq request failed: %s", e, exc_info=True)
+            throw_error(lights, "Connection error talking to the brain. See the log.")
 
         lights.set_color("idle")
         config.BUSY = False
