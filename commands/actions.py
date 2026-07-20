@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import time
 import random
@@ -8,6 +9,7 @@ import asyncio
 import queue
 from typing import Any
 
+import requests
 from thefuzz import fuzz
 
 import commands.config as config
@@ -17,10 +19,38 @@ from lights import activate_theme
 
 from project_types import LightsLike
 
+_MAX_TTS_ERROR_LEN = 160
+
+
+def _humanize_error(error: Exception | str) -> str:
+    # Friendly summaries for the network errors that actually fire here.
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return "I can't reach the lights bridge. The IP may have changed."
+    if isinstance(error, requests.exceptions.Timeout):
+        return "The lights bridge timed out."
+    if isinstance(error, requests.exceptions.HTTPError):
+        code = getattr(getattr(error, "response", None), "status_code", None)
+        return f"Lights bridge returned error {code}." if code else "Lights bridge returned an error."
+    if isinstance(error, requests.exceptions.RequestException):
+        return "Network error talking to the lights."
+
+    msg = str(error)
+    # Strip URLs and long opaque tokens (API keys, scene IDs) so TTS doesn't spell them out.
+    msg = re.sub(r"https?://\S+", "", msg)
+    msg = re.sub(r"/api/\S+", "", msg)
+    msg = re.sub(r"\b[A-Za-z0-9_-]{20,}\b", "", msg)
+    msg = re.sub(r"\s+", " ", msg).strip(" .,:;-")
+
+    if not msg:
+        msg = type(error).__name__ if isinstance(error, Exception) else "Unknown error"
+    if len(msg) > _MAX_TTS_ERROR_LEN:
+        msg = msg[: _MAX_TTS_ERROR_LEN - 1].rstrip() + "..."
+    return msg
+
 
 def throw_error(lights: LightsLike, error: Exception | str | None = None) -> None:
     if error is not None:
-        text_to_speech(str(error))
+        text_to_speech(_humanize_error(error))
     else:
         play_audio("did_i_do_wrong")
     lights.set_color("error")

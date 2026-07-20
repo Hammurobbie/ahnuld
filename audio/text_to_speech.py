@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import wave
 import tempfile
@@ -11,8 +12,29 @@ VOICE_MODEL = os.path.join(_BASE_DIR, "piper_voices", "en_US-arnold-medium.onnx"
 
 voice = PiperVoice.load(VOICE_MODEL)
 
+# Characters Piper pronounces literally ("asterisk", "underscore", "hash"...) that
+# are almost always LLM-markdown noise, never meaningful when spoken aloud.
+_TTS_NOISE_CHARS = re.compile(r"[*_`~|<>^\\#]")
+
+
+def _sanitize_for_tts(text: str) -> str:
+    # Keep the visible text of markdown links: [label](url) -> label
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # Drop fenced code block markers but keep the code's words.
+    text = re.sub(r"```[A-Za-z0-9_+-]*", "", text)
+    # Drop the noise punctuation outright.
+    text = _TTS_NOISE_CHARS.sub("", text)
+    # Collapse runs of whitespace introduced by the strips above.
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def text_to_speech(text: str) -> None:
     try:
+        text = _sanitize_for_tts(text)
+        if not text:
+            return
+
         with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
             tmp_path = tmp.name
 
