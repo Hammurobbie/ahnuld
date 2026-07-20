@@ -20,7 +20,7 @@ def query_groq(
         "Authorization": f"Bearer {GROQ_API_KEY}",
     }
     payload = {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-20b",
         "messages": messages,
         "temperature": 0.3,
         "max_tokens": 550,
