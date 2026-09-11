@@ -23,7 +23,7 @@ THEATER_LIGHTS = ("Kitchen", "Desk", "Bathroom")
 
 # Two-color themes walk the bulbs in this order, alternating rgb/rgb2. The Wiz
 # bulb is the last position, so it picks up whichever color comes next.
-ALTERNATING_ORDER = ("Kitchen", "Bathroom", "Clock", "Bookshelf", "Desk")
+ALTERNATING_ORDER = ("Bathroom", "Kitchen", "Clock", "Bookshelf", "Desk")
 
 # The bathroom is a utility room, so themes run it at full brightness. read
 # (uniform across bulbs), sleep (everything off), and videomode (dimmed with the
