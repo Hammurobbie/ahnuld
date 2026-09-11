@@ -7,23 +7,53 @@ from typing import Any
 
 from pywizlight import wizlight, PilotBuilder
 from audio import play_audio, text_to_speech
-from lights.hue_api import rgb_to_xy, set_light_state, get_all_light_ids, activate_scene
+from lights.hue_api import (
+    rgb_to_xy,
+    set_light_state,
+    get_all_light_ids,
+    get_light_ids_by_name,
+    activate_scene,
+)
 
-ALL_LIGHTS = list(range(1, 15))
-THEATER_LIGHTS = [5, 6, 7, 13, 14]
-STANDARD_LIGHTS = [7, 1, 2, 4, 3, 5, 6, 8, 10, 9, 11, 12, 13, 14]
+# Bulbs are named rather than numbered throughout, and resolved to bridge IDs at
+# call time by _ids(), so renumbering can't strand a theme on a light that's gone.
+
+# Dimmed low in video mode so they don't compete with the screen.
+THEATER_LIGHTS = ("Kitchen", "Desk", "Bathroom")
+
+# Two-color themes walk the bulbs in this order, alternating rgb/rgb2. The Wiz
+# bulb is the last position, so it picks up whichever color comes next.
+ALTERNATING_ORDER = ("Kitchen", "Bathroom", "Clock", "Bookshelf", "Desk")
+
+# The bathroom is a utility room, so themes run it at full brightness. read
+# (uniform across bulbs), sleep (everything off), and videomode (dimmed with the
+# other theater bulbs) deliberately opt out.
+FULL_BRIGHT_LIGHTS = ("Bathroom",)
+FULL_BRI = 254
+
+# Per-bulb cinema levels, matching what was dialed in by hand on the bridge.
+CINEMA_BRIGHTNESS = {
+    "Bookshelf": 1,
+    "Kitchen":   25,
+    "Desk":      1,
+    "Bathroom":  FULL_BRI,
+    "Clock":     16,
+}
 
 SCENE_THEMES = {
-    "fairfax":     "K0mIvJNac9-6CnL",
-    "snowday":     "MZejKTLSy-cZsn4f",
-    "moonlight":   "1ofOoEOk2gavw0BN",
-    "ibiza":       "FRYZyq4vHCy6fNqg",
-    "osaka":       "1advVnvQsMVBKcJd",
-    "dreamydusk":  "k1AQMyRm1jmxpQaZ",
-    "singapore":   "nmUphMMPpDa3220I",
-    "galaxy":      "6btFza2Zi46dH09",
-    "tokyo":       "C6zGdPF-UtFxn6N",
-    "lavalamp":    "WbJ9oaRrFRnbuBDt",
+    "fairfax":          "K0mIvJNac9-6CnL",
+    "snowday":          "MZejKTLSy-cZsn4f",
+    "moonlight":        "1ofOoEOk2gavw0BN",
+    "ibiza":            "FRYZyq4vHCy6fNqg",
+    "osaka":            "1advVnvQsMVBKcJd",
+    "dreamydusk":       "k1AQMyRm1jmxpQaZ",
+    "singapore":        "nmUphMMPpDa3220I",
+    "galaxy":           "6btFza2Zi46dH09",
+    "tokyo":            "C6zGdPF-UtFxn6N",
+    "lavalamp":         "WbJ9oaRrFRnbuBDt",
+    "tropicaltwilight": "rznRLrtElFILPTn",
+    "boston":           "1-XWXVGx-fOvIg-G",
+    "frost":            "CWrXxuSspVJUSFRB",
 }
 
 COLOR_THEMES = {
@@ -31,40 +61,57 @@ COLOR_THEMES = {
     "moonrisekingdom": {"rgb": (200, 50, 0),   "bri": 254},
     "speakeasy":       {"rgb": (245, 112, 0),  "bri": 223},
     "prestige":        {"rgb": (200, 80, 20),  "bri": 255},
-    "shmash":          {"rgb": (220, 50, 0),   "rgb2": (220, 50, 0),   "bri": 100, "lights": ALL_LIGHTS},
-    "cherryblossom":   {"rgb": (200, 80, 40),  "rgb2": (250, 50, 50),  "bri": 175, "lights": STANDARD_LIGHTS},
-    "cyberpunk":       {"rgb": (250, 0, 80),   "rgb2": (0, 220, 252),  "bri": 254, "lights": STANDARD_LIGHTS},
-    "bladerunner":     {"rgb": (255, 60, 0),   "rgb2": (0, 200, 250),  "bri": 254, "lights": STANDARD_LIGHTS},
-    "alien":           {"rgb": (0, 128, 0),    "rgb2": (255, 255, 1),  "bri": 254, "lights": STANDARD_LIGHTS},
-    "godfather":       {"rgb": (250, 0, 0),    "rgb2": (255, 55, 1),   "bri": 120, "lights": STANDARD_LIGHTS},
-    "brucealmighty":   {"rgb": (250, 250, 250),"rgb2": (250, 250, 250),"bri": 255, "lights": ALL_LIGHTS},
-    "titanic":         {"rgb": (0, 0, 250),    "rgb2": (0, 50, 250),   "bri": 120, "lights": ALL_LIGHTS},
+    "shmash":          {"rgb": (220, 50, 0),   "rgb2": (220, 50, 0),   "bri": 100, "lights": ALTERNATING_ORDER},
+    "cherryblossom":   {"rgb": (200, 80, 40),  "rgb2": (250, 50, 50),  "bri": 175, "lights": ALTERNATING_ORDER},
+    "cyberpunk":       {"rgb": (250, 0, 80),   "rgb2": (0, 220, 252),  "bri": 254, "lights": ALTERNATING_ORDER},
+    "bladerunner":     {"rgb": (255, 60, 0),   "rgb2": (0, 200, 250),  "bri": 254, "lights": ALTERNATING_ORDER},
+    "alien":           {"rgb": (0, 128, 0),    "rgb2": (255, 255, 1),  "bri": 254, "lights": ALTERNATING_ORDER},
+    "godfather":       {"rgb": (250, 0, 0),    "rgb2": (255, 55, 1),   "bri": 120, "lights": ALTERNATING_ORDER},
+    "brucealmighty":   {"rgb": (250, 250, 250),"rgb2": (250, 250, 250),"bri": 255, "lights": ALTERNATING_ORDER},
+    "titanic":         {"rgb": (0, 0, 250),    "rgb2": (0, 50, 250),   "bri": 120, "lights": ALTERNATING_ORDER},
 }
 
 WIZ_FALLBACK_RGB = (245, 112, 0)
 WIZ_FALLBACK_BRI = 223
+# pywizlight clamps dimming to a 10% hardware floor, so any low value bottoms out.
+# Must stay non-zero: _set_wiz_bulbs treats a falsy brightness as "nothing to do".
+WIZ_MIN_BRI = 1
+
+
+def _ids(names: tuple[str, ...]) -> list[str]:
+    by_name = get_light_ids_by_name()
+    return [by_name[n.lower()] for n in names if n.lower() in by_name]
+
+
+def _alternating_color(
+    position: int,
+    rgb: tuple[int, ...],
+    rgb2: tuple[int, ...],
+) -> tuple[int, ...]:
+    return rgb2 if position % 2 else rgb
 
 
 def _apply_alternating_colors(
-    lights: list[int],
+    light_ids: list[str],
     rgb: tuple[int, ...],
     rgb2: tuple[int, ...],
     bri: int,
-    video_mode: bool = False,
+    dim_ids: set[str] | None = None,
 ) -> None:
-    xy1 = rgb_to_xy(*rgb)
-    xy2 = rgb_to_xy(*rgb2)
-    pay1 = {"on": True, "bri": bri, "xy": xy1}
-    pay2 = {"on": True, "bri": bri, "xy": xy2}
+    full_ids = set(_ids(FULL_BRIGHT_LIGHTS))
 
-    for i, light_id in enumerate(lights):
-        state = pay2.copy() if (i % 2) else pay1.copy()
+    for i, light_id in enumerate(light_ids):
+        state: dict[str, Any] = {
+            "on": True,
+            "bri": bri,
+            "xy": rgb_to_xy(*_alternating_color(i, rgb, rgb2)),
+        }
 
-        if video_mode:
-            if light_id == 1:
-                state = {"on": False}
-            elif light_id in THEATER_LIGHTS:
-                state["bri"] = 25
+        if light_id in full_ids:
+            state["bri"] = FULL_BRI
+        # Video mode's dimming outranks the full-brightness rule.
+        if dim_ids and light_id in dim_ids:
+            state["bri"] = 25
 
         set_light_state(light_id, state)
         time.sleep(0.25)
@@ -82,7 +129,7 @@ async def _set_wiz_bulbs(
             pb = PilotBuilder(brightness=brightness)
         else:
             return
-        await asyncio.gather(*(bulb.turn_on(pb) for bulb in bulbs))
+        await asyncio.gather(*(bulb.turn_on(pb) for bulb in bulbs), return_exceptions=True)
     except Exception:
         pass
 
@@ -95,7 +142,7 @@ async def activate_theme(
     bulbs = [wizlight(ip) for ip in wiz_ips]
 
     async def _close_bulbs() -> None:
-        await asyncio.gather(*(b.async_close() for b in bulbs))
+        await asyncio.gather(*(b.async_close() for b in bulbs), return_exceptions=True)
 
     is_video_mode = theme == "videomode"
 
@@ -119,26 +166,24 @@ async def activate_theme(
 
     try:
         if theme == "sleep":
-            for hue_id in [2, 4, 8, 10]:
+            for hue_id in get_all_light_ids():
                 set_light_state(hue_id, {"on": False})
             success()
             return
 
         if theme == "read":
-            for hue_id in [2, 4, 8, 10]:
+            for hue_id in get_all_light_ids():
                 set_light_state(hue_id, {"on": True, "bri": 120, "xy": [0.57, 0.412]})
-            for hue_id in [8, 10]:
-                set_light_state(hue_id, {"on": False})
             success()
             return
 
         if theme == "cinema":
-            set_light_state(1, {"on": False})
-            for hue_id in THEATER_LIGHTS:
-                set_light_state(hue_id, {"on": True, "bri": 25})
-            for hue_id in [2, 4, 3, 8, 10, 9, 11, 12]:
-                set_light_state(hue_id, {"on": True, "bri": 75})
-            await _set_wiz_bulbs(bulbs, brightness=20)
+            by_name = get_light_ids_by_name()
+            for name, bri in CINEMA_BRIGHTNESS.items():
+                hue_id = by_name.get(name.lower())
+                if hue_id:
+                    set_light_state(hue_id, {"on": True, "bri": bri})
+            await _set_wiz_bulbs(bulbs, brightness=WIZ_MIN_BRI)
             success()
             return
 
@@ -152,7 +197,9 @@ async def activate_theme(
                 return
             rgb = tuple(colors[0])
             rgb2 = tuple(colors[1])
-            _apply_alternating_colors(STANDARD_LIGHTS, rgb, rgb2, 75, video_mode=True)
+            _apply_alternating_colors(
+                _ids(ALTERNATING_ORDER), rgb, rgb2, 75, dim_ids=set(_ids(THEATER_LIGHTS))
+            )
             await _set_wiz_bulbs(bulbs, brightness=20)
             success()
             return
@@ -161,6 +208,9 @@ async def activate_theme(
 
         if theme in SCENE_THEMES:
             activate_scene(SCENE_THEMES[theme])
+            # Scenes cover the whole group, so re-assert full brightness after.
+            for hue_id in _ids(FULL_BRIGHT_LIGHTS):
+                set_light_state(hue_id, {"on": True, "bri": FULL_BRI})
             await _set_wiz_bulbs(bulbs, rgb=WIZ_FALLBACK_RGB, brightness=WIZ_FALLBACK_BRI)
             success()
             return
@@ -172,16 +222,23 @@ async def activate_theme(
             rgb_cfg: tuple[int, ...] = cfg_theme["rgb"]
             rgb2_cfg: tuple[int, ...] | None = cfg_theme.get("rgb2")
             bri_cfg: int = cfg_theme["bri"]
-            lights_list: list[int] | None = cfg_theme.get("lights")
+            bulb_names: tuple[str, ...] | None = cfg_theme.get("lights")
 
-            if lights_list:
-                _apply_alternating_colors(lights_list, rgb_cfg, rgb2_cfg or rgb_cfg, bri_cfg)
+            if bulb_names:
+                hue_ids = _ids(bulb_names)
+                alt_rgb2 = rgb2_cfg or rgb_cfg
+                _apply_alternating_colors(hue_ids, rgb_cfg, alt_rgb2, bri_cfg)
+                # The Wiz bulb is the next position after the Hue bulbs.
+                wiz_rgb = _alternating_color(len(hue_ids), rgb_cfg, alt_rgb2)
             else:
                 xy = rgb_to_xy(*rgb_cfg)
+                full_ids = set(_ids(FULL_BRIGHT_LIGHTS))
                 for lid in get_all_light_ids():
-                    set_light_state(lid, {"on": True, "bri": bri_cfg, "xy": xy})
+                    lid_bri = FULL_BRI if lid in full_ids else bri_cfg
+                    set_light_state(lid, {"on": True, "bri": lid_bri, "xy": xy})
+                wiz_rgb = rgb_cfg
 
-            await _set_wiz_bulbs(bulbs, rgb=rgb_cfg, brightness=bri_cfg)
+            await _set_wiz_bulbs(bulbs, rgb=wiz_rgb, brightness=bri_cfg)
             success()
             return
 

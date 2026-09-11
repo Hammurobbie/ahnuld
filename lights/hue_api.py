@@ -26,6 +26,11 @@ def get_all_light_ids() -> list[str]:
     return list(requests.get(f"{_base_url()}/lights").json().keys())
 
 
+def get_light_ids_by_name() -> dict[str, str]:
+    lights = requests.get(f"{_base_url()}/lights").json()
+    return {info["name"].strip().lower(): lid for lid, info in lights.items()}
+
+
 def set_light_state(light_id: str | int, state: dict[str, Any]) -> None:
     requests.put(f"{_base_url()}/lights/{light_id}/state", json.dumps(state))
 

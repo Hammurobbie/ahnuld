@@ -46,6 +46,8 @@ KNOWN_THEMES: list[str] = [
     "lavalamp",
     "tropicaltwilight",
     "snowday",
+    "boston",
+    "frost",
     "videomode",
 ]
 
