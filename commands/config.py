@@ -15,9 +15,17 @@ CPU_MODE_PLAN_FIRST: bool = True
 BLOCKSIZE: int = 8000
 LISTENING: bool = True
 SAMPLE_RATE: int = 48000
-MIC_DEVICE_INDEX: int = 1
-VAD_THRESHOLD: float = 0.03
+MIC_DEVICE_INDEX: int = 3
+OUTPUT_DEVICE_INDEX: int = 2
 VOSK_MODEL_PATH: str = os.path.join(_ROOT, "audio", "vosk-model-small-en-us-0.15")
+
+# Sleep mode decodes against this restricted grammar instead of the full model.
+# Vosk maps anything outside the list to [unk] and reports it as empty text, so
+# unrelated speech can't wake him and quiet speech still resolves to the phrase.
+WAKE_WORDS: list[str] = ["hey arnold", "arnold", "hey"]
+
+# The distinctive token. Bare "hey" decodes but deliberately does not wake him.
+WAKE_TOKEN: str = "arnold"
 
 KNOWN_THEMES: list[str] = [
     "sleep",

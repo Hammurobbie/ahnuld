@@ -20,13 +20,21 @@ from commands.actions import (
     throw_error,
 )
 from project_types import LightsLike
-from utils import listen_for_speech
 
 # silence temrinal output
 # SetLogLevel(-1)
 
 model = Model(config.VOSK_MODEL_PATH)
 rec: Any = KaldiRecognizer(model, config.SAMPLE_RATE)
+
+# Sleep mode uses its own recognizer restricted to the wake grammar. Measured on
+# the Pi with an AC running, this caught 7/7 spoken wakes where the open-vocab
+# recognizer caught 3/7 (it heard "they only", "they'll and", "fail", "beyond
+# me"), and produced no false wakes over 25s of unrelated conversation.
+wake_rec: Any = KaldiRecognizer(
+    model, config.SAMPLE_RATE, json.dumps(config.WAKE_WORDS + ["[unk]"])
+)
+
 q: queue.Queue[tuple[float, bytes]] = queue.Queue(maxsize=20)
 
 
@@ -59,47 +67,36 @@ def callback(indata: Any, frames: int, time_: Any, status: Any) -> None:
 
 def process_sleep_mode(
     q: queue.Queue[tuple[float, bytes]],
-    rec: Any,
+    wake_rec: Any,
     lights: LightsLike,
-    speech_heard: bool,
-    speech_timer: float,
-) -> tuple[bool, float, bool]:
-    woke_up = False
-    times_up = (time.time() - speech_timer) > 5
+) -> bool:
+    """Feed every captured block to the wake recognizer and return whether he woke.
 
-    if not speech_heard:
-        for block in listen_for_speech():
-            speech_heard = True
-            speech_timer = time.time()
-            break
+    There is deliberately no energy gate in front of this. The USB mic is already
+    at maximum hardware gain (+23.8dB, AGC off), which leaves speech only about
+    2-3x above the noise floor of a running AC, so any RMS threshold high enough
+    to reject the AC also rejects normal speaking volume. The grammar rejects
+    non-wake audio instead, which it does without the volume sensitivity.
+    """
+    try:
+        item = q.get(timeout=0.2)
+        data = item[1] if isinstance(item, tuple) else item
+    except queue.Empty:
+        return False
 
-    if speech_heard:
-        try:
-            item = q.get(timeout=0.2)
-            data = item[1] if isinstance(item, tuple) else item
-        except queue.Empty:
-            return speech_heard, speech_timer, woke_up
+    if not data or not wake_rec.AcceptWaveform(data):
+        return False
 
-        if data and rec.AcceptWaveform(data):
-            result = json.loads(rec.Result())
-            full_text = result.get("text", "").lower().strip()
+    text = json.loads(wake_rec.Result()).get("text", "").lower().strip()
+    if config.WAKE_TOKEN not in text:
+        return False
 
-            if full_text and (
-                "hey arnold" in full_text or
-                fuzz.ratio("hey arnold", full_text) >= 90
-            ):
-                lights.set_color("idle")
-                greet(lights, None, q)
-                config.AWAKE = True
-                config.CPU_MODE = True  # wake directly into CPU mode; "learning computer" path kept for revert
-                speech_heard = False
-                speech_timer = time.time()
-                woke_up = True
-
-    if speech_heard and times_up:
-        speech_heard = False
-
-    return speech_heard, speech_timer, woke_up
+    lights.set_color("idle")
+    greet(lights, None, q)
+    config.AWAKE = True
+    config.CPU_MODE = True  # wake directly into CPU mode; "learning computer" path kept for revert
+    wake_rec.Reset()
+    return True
 
 
 def _accumulate_speech(
@@ -195,26 +192,19 @@ def handle_commands(lights: LightsLike) -> None:
     config.LISTENING = True
     config.AWAKE = False
     last_command_time = time.time()
-    speech_heard = False
-    speech_timer = time.time()
 
     try:
-        mic_info = sd.query_devices(config.MIC_DEVICE_INDEX)
-        _ = mic_info['max_input_channels']
-
         with sd.RawInputStream(
             samplerate=config.SAMPLE_RATE,
-            blocksize=8000,
+            blocksize=config.BLOCKSIZE,
+            device=config.MIC_DEVICE_INDEX,
             dtype='int16',
             channels=1,
             callback=callback
         ):
             while config.LISTENING:
                 if not config.AWAKE:
-                    speech_heard, speech_timer, woke_up = process_sleep_mode(
-                        q, rec, lights, speech_heard, speech_timer
-                    )
-                    if woke_up:
+                    if process_sleep_mode(q, wake_rec, lights):
                         last_command_time = time.time()
                 else:
                     command_processed = process_awake_mode(lights, q, rec)

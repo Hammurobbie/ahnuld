@@ -9,8 +9,10 @@ from queue import Queue
 from datetime import datetime
 from pydub import AudioSegment
 
-MIC_DEVICE_INDEX: int = 3
-OUTPUT_DEVICE_INDEX: int = 2
+import commands.config as config
+
+MIC_DEVICE_INDEX: int = config.MIC_DEVICE_INDEX
+OUTPUT_DEVICE_INDEX: int = config.OUTPUT_DEVICE_INDEX
 sd.default.device = (MIC_DEVICE_INDEX, OUTPUT_DEVICE_INDEX)
 
 audio_queue: Queue[tuple[str, bool] | None] = Queue()
