@@ -41,19 +41,19 @@ CINEMA_BRIGHTNESS = {
 }
 
 SCENE_THEMES = {
-    "fairfax":          "K0mIvJNac9-6CnL",
-    "snowday":          "MZejKTLSy-cZsn4f",
-    "moonlight":        "1ofOoEOk2gavw0BN",
-    "ibiza":            "FRYZyq4vHCy6fNqg",
-    "osaka":            "1advVnvQsMVBKcJd",
-    "dreamydusk":       "k1AQMyRm1jmxpQaZ",
-    "singapore":        "nmUphMMPpDa3220I",
-    "galaxy":           "6btFza2Zi46dH09",
-    "tokyo":            "C6zGdPF-UtFxn6N",
-    "lavalamp":         "WbJ9oaRrFRnbuBDt",
-    "tropicaltwilight": "rznRLrtElFILPTn",
-    "boston":           "1-XWXVGx-fOvIg-G",
-    "frost":            "CWrXxuSspVJUSFRB",
+    "fairfax":     "K0mIvJNac9-6CnL",
+    "snowday":     "MZejKTLSy-cZsn4f",
+    "moonlight":   "1ofOoEOk2gavw0BN",
+    "ibiza":       "FRYZyq4vHCy6fNqg",
+    "osaka":       "1advVnvQsMVBKcJd",
+    "dreamydusk":  "k1AQMyRm1jmxpQaZ",
+    "singapore":   "nmUphMMPpDa3220I",
+    "galaxy":      "6btFza2Zi46dH09",
+    "tokyo":       "C6zGdPF-UtFxn6N",
+    "lavalamp":    "WbJ9oaRrFRnbuBDt",
+    "sunset":      "rznRLrtElFILPTn",
+    "boston":      "1-XWXVGx-fOvIg-G",
+    "frost":       "CWrXxuSspVJUSFRB",
 }
 
 COLOR_THEMES = {

@@ -44,7 +44,7 @@ KNOWN_THEMES: list[str] = [
     "galaxy",
     "tokyo",
     "lavalamp",
-    "tropicaltwilight",
+    "sunset",
     "snowday",
     "boston",
     "frost",
