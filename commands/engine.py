@@ -34,6 +34,7 @@ rec: Any = KaldiRecognizer(model, config.SAMPLE_RATE)
 wake_rec: Any = KaldiRecognizer(
     model, config.SAMPLE_RATE, json.dumps(config.WAKE_WORDS + ["[unk]"])
 )
+wake_rec.SetWords(True)  # per-word confidence, used to reject marginal matches
 
 q: queue.Queue[tuple[float, bytes]] = queue.Queue(maxsize=20)
 
@@ -87,10 +88,25 @@ def process_sleep_mode(
     if not data or not wake_rec.AcceptWaveform(data):
         return False
 
-    text = json.loads(wake_rec.Result()).get("text", "").lower().strip()
-    if config.WAKE_TOKEN not in text:
+    result = json.loads(wake_rec.Result())
+    text = result.get("text", "").lower().strip()
+    if config.WAKE_PHRASE not in text:
         return False
 
+    # Score the phrase itself and ignore the [unk] filler that surrounds it, which
+    # carries no useful confidence of its own.
+    confidences = [
+        word.get("conf", 0.0)
+        for word in result.get("result", [])
+        if word.get("word") != "[unk]"
+    ]
+    score = min(confidences) if confidences else 0.0
+
+    if score < config.WAKE_MIN_CONFIDENCE:
+        print(f"[wake] ignored {text!r} conf={score:.2f}", flush=True)
+        return False
+
+    print(f"[wake] woke on {text!r} conf={score:.2f}", flush=True)
     lights.set_color("idle")
     greet(lights, None, q)
     config.AWAKE = True

@@ -22,10 +22,20 @@ VOSK_MODEL_PATH: str = os.path.join(_ROOT, "audio", "vosk-model-small-en-us-0.15
 # Sleep mode decodes against this restricted grammar instead of the full model.
 # Vosk maps anything outside the list to [unk] and reports it as empty text, so
 # unrelated speech can't wake him and quiet speech still resolves to the phrase.
-WAKE_WORDS: list[str] = ["hey arnold", "arnold", "hey"]
+# Only the whole phrase is offered as an alternative: listing bare "arnold" let a
+# meeting's worth of unrelated speech land on that single word and wake him.
+WAKE_WORDS: list[str] = ["hey arnold"]
 
-# The distinctive token. Bare "hey" decodes but deliberately does not wake him.
-WAKE_TOKEN: str = "arnold"
+# The full phrase has to appear. Surrounding [unk] is fine, since genuine wakes
+# often decode as "[unk] hey arnold" or "hey hey arnold".
+WAKE_PHRASE: str = "hey arnold"
+
+# Floor on the per-word confidence of the matched phrase, as a backstop against
+# genuinely garbage decodes. Kept well below the lowest real wake measured off
+# this mic (0.79, on a doubled "hey hey arnold"): at 0.80 this rejected that live
+# wake while catching no false ones, since requiring the whole phrase is what
+# actually does the rejecting.
+WAKE_MIN_CONFIDENCE: float = 0.50
 
 KNOWN_THEMES: list[str] = [
     "sleep",
