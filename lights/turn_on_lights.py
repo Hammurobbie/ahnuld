@@ -73,9 +73,6 @@ COLOR_THEMES = {
 
 WIZ_FALLBACK_RGB = (245, 112, 0)
 WIZ_FALLBACK_BRI = 223
-# pywizlight clamps dimming to a 10% hardware floor, so any low value bottoms out.
-# Must stay non-zero: _set_wiz_bulbs treats a falsy brightness as "nothing to do".
-WIZ_MIN_BRI = 1
 
 
 def _ids(names: tuple[str, ...]) -> list[str]:
@@ -134,6 +131,13 @@ async def _set_wiz_bulbs(
         pass
 
 
+async def _turn_off_wiz_bulbs(bulbs: list[Any]) -> None:
+    try:
+        await asyncio.gather(*(bulb.turn_off() for bulb in bulbs), return_exceptions=True)
+    except Exception:
+        pass
+
+
 async def activate_theme(
     theme: str | None,
     led_lights: Any = None,
@@ -183,7 +187,9 @@ async def activate_theme(
                 hue_id = by_name.get(name.lower())
                 if hue_id:
                     set_light_state(hue_id, {"on": True, "bri": bri})
-            await _set_wiz_bulbs(bulbs, brightness=WIZ_MIN_BRI)
+            # Off rather than dimmed: pywizlight clamps dimming to a 10% hardware
+            # floor, so even brightness=1 stayed too bright for the room.
+            await _turn_off_wiz_bulbs(bulbs)
             success()
             return
 
