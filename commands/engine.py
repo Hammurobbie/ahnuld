@@ -32,7 +32,9 @@ rec: Any = KaldiRecognizer(model, config.SAMPLE_RATE)
 # recognizer caught 3/7 (it heard "they only", "they'll and", "fail", "beyond
 # me"), and produced no false wakes over 25s of unrelated conversation.
 wake_rec: Any = KaldiRecognizer(
-    model, config.SAMPLE_RATE, json.dumps(config.WAKE_WORDS + ["[unk]"])
+    model,
+    config.SAMPLE_RATE,
+    json.dumps(config.WAKE_WORDS + config.WAKE_DECOYS + ["[unk]"]),
 )
 wake_rec.SetWords(True)  # per-word confidence, used to reject marginal matches
 

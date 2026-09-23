@@ -22,20 +22,37 @@ VOSK_MODEL_PATH: str = os.path.join(_ROOT, "audio", "vosk-model-small-en-us-0.15
 # Sleep mode decodes against this restricted grammar instead of the full model.
 # Vosk maps anything outside the list to [unk] and reports it as empty text, so
 # unrelated speech can't wake him and quiet speech still resolves to the phrase.
-# Only the whole phrase is offered as an alternative: listing bare "arnold" let a
-# meeting's worth of unrelated speech land on that single word and wake him.
 WAKE_WORDS: list[str] = ["hey arnold"]
+
+# Competing words, so conversation has somewhere to land other than the wake
+# phrase. With only the phrase and [unk] in the grammar, meeting chatter was
+# force-fitted onto "hey arnold" and reported at confidence 1.00 -- there was
+# nothing for it to lose to, which made the confidence score meaningless. The
+# first group are phonetic neighbours of "arnold"; the rest are just common
+# speech. Matching still requires the whole phrase, so a decoy on its own is
+# harmless.
+WAKE_DECOYS: list[str] = [
+    "arnold", "around", "although", "already", "all", "old", "hold", "told",
+    "gold", "world", "another", "under", "aren't", "alone", "along",
+    "hey", "hello", "okay", "yeah", "yes", "no", "and", "the", "a", "so",
+    "but", "they", "there", "then", "that", "this", "it", "i", "we", "you",
+    "what", "when", "how", "why", "who", "well", "just", "like", "know",
+    "think", "going", "get", "got", "can", "will", "would", "should", "about",
+    "with", "for", "from", "have", "has", "had", "right", "our", "are", "or",
+    "her", "him", "them", "on", "in", "at", "to", "of", "was", "were",
+]
 
 # The full phrase has to appear. Surrounding [unk] is fine, since genuine wakes
 # often decode as "[unk] hey arnold" or "hey hey arnold".
 WAKE_PHRASE: str = "hey arnold"
 
 # Floor on the per-word confidence of the matched phrase, as a backstop against
-# genuinely garbage decodes. Kept well below the lowest real wake measured off
-# this mic (0.79, on a doubled "hey hey arnold"): at 0.80 this rejected that live
-# wake while catching no false ones, since requiring the whole phrase is what
-# actually does the rejecting.
-WAKE_MIN_CONFIDENCE: float = 0.50
+# garbage decodes only. It cannot be used to separate real wakes from false ones:
+# logged accidents during meetings scored 1.00 while a confirmed intentional wake
+# scored 0.68, so any floor high enough to cut the former loses the latter. The
+# decoy vocabulary is what does that work. Kept just under the lowest real wake
+# measured against the decoy grammar (0.45).
+WAKE_MIN_CONFIDENCE: float = 0.40
 
 KNOWN_THEMES: list[str] = [
     "sleep",
