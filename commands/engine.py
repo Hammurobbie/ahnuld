@@ -27,10 +27,10 @@ from project_types import LightsLike
 model = Model(config.VOSK_MODEL_PATH)
 rec: Any = KaldiRecognizer(model, config.SAMPLE_RATE)
 
-# Sleep mode uses its own recognizer restricted to the wake grammar. Measured on
-# the Pi with an AC running, this caught 7/7 spoken wakes where the open-vocab
-# recognizer caught 3/7 (it heard "they only", "they'll and", "fail", "beyond
-# me"), and produced no false wakes over 25s of unrelated conversation.
+# Sleep mode uses its own recognizer, restricted to the wake phrase plus decoys.
+# The full model is far worse at this: on the same audio it caught 3/7 spoken
+# wakes to the grammar's 7/7, hearing "they only", "they'll and", "fail" and
+# "beyond me" instead.
 wake_rec: Any = KaldiRecognizer(
     model,
     config.SAMPLE_RATE,
@@ -68,6 +68,23 @@ def callback(indata: Any, frames: int, time_: Any, status: Any) -> None:
 
 
 
+def _phrase_confidence(words: list[dict[str, Any]], phrase: str) -> float | None:
+    """Lowest confidence among the words forming the wake phrase, or None if absent.
+
+    Scores the phrase alone. Decoys and [unk] routinely sit either side of it and
+    their confidence says nothing about whether the phrase itself was spoken, so
+    including them would let an unrelated neighbouring word veto a real wake.
+    """
+    target = phrase.split()
+    spoken = [word.get("word", "").lower() for word in words]
+
+    for i in range(len(spoken) - len(target) + 1):
+        if spoken[i:i + len(target)] == target:
+            return min(word.get("conf", 0.0) for word in words[i:i + len(target)])
+
+    return None
+
+
 def process_sleep_mode(
     q: queue.Queue[tuple[float, bytes]],
     wake_rec: Any,
@@ -92,17 +109,10 @@ def process_sleep_mode(
 
     result = json.loads(wake_rec.Result())
     text = result.get("text", "").lower().strip()
-    if config.WAKE_PHRASE not in text:
-        return False
 
-    # Score the phrase itself and ignore the [unk] filler that surrounds it, which
-    # carries no useful confidence of its own.
-    confidences = [
-        word.get("conf", 0.0)
-        for word in result.get("result", [])
-        if word.get("word") != "[unk]"
-    ]
-    score = min(confidences) if confidences else 0.0
+    score = _phrase_confidence(result.get("result", []), config.WAKE_PHRASE)
+    if score is None:
+        return False
 
     if score < config.WAKE_MIN_CONFIDENCE:
         print(f"[wake] ignored {text!r} conf={score:.2f}", flush=True)
