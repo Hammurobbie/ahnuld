@@ -169,6 +169,16 @@ async def activate_theme(
     # --- Special themes with custom per-light logic ---
 
     try:
+        # "on the lights" with no theme: turn bulbs on, leave their color alone.
+        # Do not guess a theme. The old fuzzy matcher used to turn leftover
+        # words like "the" into Godfather.
+        if not theme:
+            for hue_id in get_all_light_ids():
+                set_light_state(hue_id, {"on": True})
+            await asyncio.gather(*(bulb.turn_on() for bulb in bulbs), return_exceptions=True)
+            success()
+            return
+
         if theme == "sleep":
             for hue_id in get_all_light_ids():
                 set_light_state(hue_id, {"on": False})
@@ -213,6 +223,7 @@ async def activate_theme(
         # --- Scene themes (Hue Bridge scenes) ---
 
         if theme in SCENE_THEMES:
+            print(f"[lights] scene {theme} id={SCENE_THEMES[theme]}", flush=True)
             activate_scene(SCENE_THEMES[theme])
             # Scenes cover the whole group, so re-assert full brightness after.
             for hue_id in _ids(FULL_BRIGHT_LIGHTS):

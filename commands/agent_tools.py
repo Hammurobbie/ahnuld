@@ -100,7 +100,7 @@ NATIVE_TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "set_lights",
-            "description": "Turn lights on (optional theme), off, or set theme. Use get_light_themes for theme names.",
+            "description": "Turn lights on, off, or set a theme. Only pass theme when the user named one from get_light_themes. Never invent a theme.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -111,7 +111,7 @@ NATIVE_TOOL_DEFINITIONS = [
                     },
                     "theme": {
                         "type": "string",
-                        "description": "Optional theme name when turning on (e.g. cinema, read, sleep).",
+                        "description": "Exact theme the user named. Omit if they did not name one.",
                     },
                 },
                 "required": ["action"],
@@ -299,21 +299,12 @@ def _set_lights(
     action = (arguments.get("action") or "on").lower().strip()
     raw_theme = (arguments.get("theme") or "").strip() or None
 
-    theme = None
-    if raw_theme:
-        normalized = raw_theme.lower().replace(" ", "").replace("-", "").replace("_", "")
-        if normalized in config.KNOWN_THEMES:
-            theme = normalized
-        else:
-            from thefuzz import fuzz
-            best_theme = None
-            highest_score = 0
-            for known in config.KNOWN_THEMES:
-                score = fuzz.ratio(normalized, known)
-                if score > highest_score and score >= 70:
-                    best_theme = known
-                    highest_score = score
-            theme = best_theme or normalized
+    theme = config.match_light_theme(raw_theme) if raw_theme else None
+    if raw_theme and theme is None:
+        print(f"[lights] unknown theme {raw_theme!r}", flush=True)
+        return f"I don't know the theme {raw_theme}.", False
+    if theme:
+        print(f"[lights] tool set {raw_theme!r} -> {theme}", flush=True)
 
     if action == "off":
         turn_off_lights(lights)

@@ -10,7 +10,6 @@ import queue
 from typing import Any
 
 import requests
-from thefuzz import fuzz
 
 import commands.config as config
 from audio import play_audio, text_to_speech
@@ -138,19 +137,23 @@ def execute_command(
         theme = None
 
         if command.get("args"):
-            theme_candidate = text.split(command["cmd"], 1)[-1].strip()
-
-            best_theme = None
-            highest_score = 0
-            threshold = 80
-
-            for known in config.KNOWN_THEMES:
-                score = fuzz.partial_ratio(theme_candidate, known)
-                if score > highest_score and score >= threshold:
-                    best_theme = known
-                    highest_score = score
-
-            theme = best_theme or theme_candidate.replace(" ", "")
+            leftover = text.split(command["cmd"], 1)[-1].strip()
+            # If the exact command string wasn't in the transcript, the split
+            # returns the whole utterance. Still match against that leftover.
+            theme = config.match_light_theme(leftover)
+            if leftover and theme is None:
+                tokens = [
+                    token for token in leftover.lower().split()
+                    if token not in config.THEME_STOPWORDS
+                ]
+                if tokens:
+                    # Named something we could not resolve. Pass it through so
+                    # activate_theme errors instead of guessing Godfather.
+                    theme = leftover.replace(" ", "")
+            if theme:
+                print(f"[lights] matched {leftover!r} -> {theme}", flush=True)
+            else:
+                print(f"[lights] on with no theme (leftover={leftover!r})", flush=True)
 
         if func_name in globals():
             globals()[func_name](lights, theme)

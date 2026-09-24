@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from thefuzz import fuzz
+
 # Project root (config lives in commands/)
 _ROOT: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -85,6 +87,62 @@ KNOWN_THEMES: list[str] = [
     "frost",
     "videomode",
 ]
+
+# Spoken leftovers that are not themes. partial_ratio used to treat these as
+# matches because they are substrings of real theme names: "the" is inside
+# "godfather" at score 100, "to" inside "tokyo"/"boston", "set" inside "sunset".
+# That is why a missed theme request sometimes slammed the room into Godfather.
+THEME_STOPWORDS: frozenset[str] = frozenset({
+    "a", "and", "light", "lights", "mode", "off", "on", "please",
+    "put", "set", "the", "theme", "to", "turn",
+})
+
+THEME_ALIASES: dict[str, str] = {
+    "tropicaltwilight": "sunset",
+    "downtowndrizzle": "boston",
+    "fuchsiafrost": "frost",
+}
+
+
+def match_light_theme(raw: str | None) -> str | None:
+    """Return a known theme name, or None if this is not a real theme request."""
+    if not raw:
+        return None
+
+    compact = raw.lower().replace("-", "").replace("_", "").replace(" ", "")
+    if compact in THEME_ALIASES:
+        return THEME_ALIASES[compact]
+    if compact in KNOWN_THEMES:
+        return compact
+
+    tokens = [
+        token for token in raw.lower().replace("-", " ").replace("_", " ").split()
+        if token not in THEME_STOPWORDS
+    ]
+    cleaned = "".join(tokens)
+    if not cleaned:
+        return None
+    if cleaned in THEME_ALIASES:
+        return THEME_ALIASES[cleaned]
+    if cleaned in KNOWN_THEMES:
+        return cleaned
+
+    for known in KNOWN_THEMES:
+        if known in cleaned or cleaned in known and len(cleaned) >= 5:
+            return known
+
+    if len(cleaned) < 4:
+        return None
+
+    best_theme = None
+    highest_score = 0
+    for known in KNOWN_THEMES:
+        score = fuzz.ratio(cleaned, known)
+        if score > highest_score:
+            best_theme = known
+            highest_score = score
+    return best_theme if highest_score >= 80 else None
+
 
 # MCP servers for learning computer (optional).
 # Each entry: {"command": str, "args": list[str]}
