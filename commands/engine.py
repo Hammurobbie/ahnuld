@@ -4,6 +4,8 @@ import gc
 import json
 import time
 import queue
+import re
+from collections import deque
 from typing import Any
 
 from thefuzz import fuzz
@@ -18,6 +20,8 @@ from commands.actions import (
     sleep,
     execute_command,
     throw_error,
+    turn_on_lights,
+    turn_off_lights,
 )
 from project_types import LightsLike
 
@@ -38,7 +42,22 @@ wake_rec: Any = KaldiRecognizer(
 )
 wake_rec.SetWords(True)  # per-word confidence, used to reject marginal matches
 
+# Lights requests are re-decoded against theme names only. Open vocabulary turns
+# "sunset" and "boston" into whatever common words sound close.
+theme_rec: Any = KaldiRecognizer(
+    model,
+    config.SAMPLE_RATE,
+    json.dumps(list(config.THEME_PHRASES) + config.THEME_GRAMMAR_FILLER + ["[unk]"]),
+)
+theme_rec.SetWords(True)
+
 q: queue.Queue[tuple[float, bytes]] = queue.Queue(maxsize=20)
+
+# Copy of the most recent mic audio, independent of q (which the recognizers drain).
+_recent_audio: deque[tuple[float, bytes]] = deque(
+    maxlen=int(config.THEME_AUDIO_SECONDS * config.SAMPLE_RATE / config.BLOCKSIZE) + 2
+)
+_awake_since = 0.0
 
 
 def callback(indata: Any, frames: int, time_: Any, status: Any) -> None:
@@ -58,6 +77,7 @@ def callback(indata: Any, frames: int, time_: Any, status: Any) -> None:
             pass
 
         item = (now, bytes(indata))
+        _recent_audio.append(item)
 
         if q.full():
             q.get_nowait()
@@ -98,6 +118,7 @@ def process_sleep_mode(
     to reject the AC also rejects normal speaking volume. The grammar rejects
     non-wake audio instead, which it does without the volume sensitivity.
     """
+    global _awake_since
     try:
         item = q.get(timeout=0.2)
         data = item[1] if isinstance(item, tuple) else item
@@ -121,6 +142,7 @@ def process_sleep_mode(
     print(f"[wake] woke on {text!r} conf={score:.2f}", flush=True)
     lights.set_color("idle")
     greet(lights, None, q)
+    _awake_since = time.time()
     config.AWAKE = True
     config.CPU_MODE = True  # wake directly into CPU mode; "learning computer" path kept for revert
     wake_rec.Reset()
@@ -164,6 +186,105 @@ def _accumulate_speech(
     return accumulated.strip()
 
 
+def _decode_theme() -> str | None:
+    """Re-decode the last few seconds against theme names and return the theme key.
+
+    The window never reaches back past the moment he finished greeting, so the
+    wake phrase and his own voice are not in it.
+    """
+    cutoff = max(time.time() - config.THEME_AUDIO_SECONDS, _awake_since)
+    blocks = [data for timestamp, data in list(_recent_audio) if timestamp >= cutoff]
+    if not blocks:
+        return None
+
+    words: list[dict[str, Any]] = []
+    for data in blocks:
+        if theme_rec.AcceptWaveform(data):
+            words += json.loads(theme_rec.Result()).get("result", [])
+    words += json.loads(theme_rec.FinalResult()).get("result", [])
+    theme_rec.Reset()
+
+    spoken = [word.get("word", "") for word in words]
+    matches: list[tuple[int, str]] = []
+    i = 0
+    while i < len(spoken):
+        for size in (3, 2, 1):
+            phrase = " ".join(spoken[i:i + size])
+            if i + size <= len(spoken) and phrase in config.THEME_PHRASES:
+                matches.append((i, config.THEME_PHRASES[phrase]))
+                i += size
+                break
+        else:
+            i += 1
+
+    # Other speech in the window gets force-fitted onto themes too ("news for the
+    # city" came back as "osaka"), so prefer the theme right after "lights".
+    intent_positions = [
+        pos for pos, word in enumerate(spoken) if word in config.LIGHTS_INTENT_WORDS
+    ]
+    after_intent = [
+        theme for pos, theme in matches
+        if intent_positions and pos > intent_positions[-1]
+    ]
+    if after_intent:
+        theme = after_intent[0]
+    elif matches:
+        theme = matches[-1][1]
+    else:
+        theme = None
+
+    print(f"[lights] theme grammar heard {' '.join(spoken)!r} -> {theme}", flush=True)
+    return theme
+
+
+def _is_query(text: str) -> bool:
+    return len(text) > 7 and len(text.split()) > 1
+
+
+def _split_lights_clause(text: str) -> tuple[str, str]:
+    """Split an utterance into its lights clause and everything else.
+
+    "turn the lights on to fairfax and give me the weather" gives
+    ("turn the lights on to fairfax", "give me the weather"). The last clause
+    naming the lights wins, since earlier ones can be chatter misheard as "lights".
+    """
+    clauses = re.split(r"\s+(?:and then|and|then)\s+", text)
+    for index in range(len(clauses) - 1, -1, -1):
+        if set(clauses[index].split()) & config.LIGHTS_INTENT_WORDS:
+            rest = clauses[:index] + clauses[index + 1:]
+            return clauses[index], " and ".join(rest)
+    return "", text
+
+
+def _handle_lights_locally(text: str, lights: LightsLike) -> bool:
+    """Handle a lights request without the LLM when it can be resolved here.
+
+    Returns False, leaving it to the LLM, when no theme was heard.
+    """
+    global _awake_since
+    tokens = set(text.split())
+    if not tokens & config.LIGHTS_INTENT_WORDS:
+        return False
+
+    if "off" in tokens:
+        print(f"[lights] local off from {text!r}", flush=True)
+        action, theme = turn_off_lights, None
+    else:
+        theme = _decode_theme()
+        if theme is None:
+            return False
+        print(f"[lights] local on {theme} from {text!r}", flush=True)
+        action = turn_on_lights
+
+    config.BUSY = True
+    try:
+        action(lights, theme)
+    finally:
+        config.BUSY = False
+        _awake_since = time.time()
+    return True
+
+
 def process_awake_mode(
     lights: LightsLike,
     q: queue.Queue[tuple[float, bytes]],
@@ -193,7 +314,14 @@ def process_awake_mode(
         if config.CPU_MODE:
             full_text = _accumulate_speech(q, rec, full_text)
 
-        is_query = len(full_text) > 7 and len(full_text.split()) > 1
+        lights_clause, rest = _split_lights_clause(full_text)
+        if lights_clause and _handle_lights_locally(lights_clause, lights):
+            if not _is_query(rest):
+                return True
+            print(f"[lights] passing rest to LLM: {rest!r}", flush=True)
+            full_text = rest
+
+        is_query = _is_query(full_text)
 
         if config.CPU_MODE and not config.BUSY and is_query:
             handle_cpu_mode(full_text, q, lights)

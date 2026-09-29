@@ -103,6 +103,69 @@ THEME_ALIASES: dict[str, str] = {
     "fuchsiafrost": "frost",
 }
 
+# How each theme is actually said, for the theme-only grammar that re-decodes a
+# lights request. Every word must be in the Vosk model's vocabulary or Vosk drops
+# it with a warning; "cyberpunk", "lavalamp", "snowday" and "shmash" are not, so
+# they appear only as spelled-out forms.
+THEME_PHRASES: dict[str, str] = {
+    "sleep": "sleep",
+    "read": "read",
+    "reading": "read",
+    "cinema": "cinema",
+    "midnight in paris": "midnightinparis",
+    "moonrise kingdom": "moonrisekingdom",
+    "moon rise kingdom": "moonrisekingdom",
+    "speakeasy": "speakeasy",
+    "speak easy": "speakeasy",
+    "smash": "shmash",
+    "cherry blossom": "cherryblossom",
+    "cyber punk": "cyberpunk",
+    "blade runner": "bladerunner",
+    "bladerunner": "bladerunner",
+    "alien": "alien",
+    "godfather": "godfather",
+    "god father": "godfather",
+    "bruce almighty": "brucealmighty",
+    "titanic": "titanic",
+    "prestige": "prestige",
+    "fairfax": "fairfax",
+    "fair fax": "fairfax",
+    "moonlight": "moonlight",
+    "moon light": "moonlight",
+    "ibiza": "ibiza",
+    "dreamy dusk": "dreamydusk",
+    "osaka": "osaka",
+    "singapore": "singapore",
+    "galaxy": "galaxy",
+    "tokyo": "tokyo",
+    "lava lamp": "lavalamp",
+    "sunset": "sunset",
+    "sun set": "sunset",
+    "tropical twilight": "sunset",
+    "snow day": "snowday",
+    "boston": "boston",
+    "downtown drizzle": "boston",
+    "frost": "frost",
+    "fuchsia frost": "frost",
+    "video mode": "videomode",
+}
+
+# The rest of a lights request, so those words land here instead of being
+# force-fitted onto a theme. Without them "turn on the lights" alone would come
+# back as whichever theme sounds closest.
+THEME_GRAMMAR_FILLER: list[str] = [
+    "hey", "arnold", "turn", "on", "off", "the", "lights", "light", "set",
+    "to", "put", "in", "please", "change", "make", "it", "theme", "mode",
+    "can", "you", "switch", "and", "a",
+]
+
+# Awake-mode words that mark an utterance as a lights request.
+LIGHTS_INTENT_WORDS: frozenset[str] = frozenset({"light", "lights", "theme"})
+
+# Seconds of recent audio re-decoded for a lights request, never reaching back
+# past the end of his greeting.
+THEME_AUDIO_SECONDS: float = 7.0
+
 
 def match_light_theme(raw: str | None) -> str | None:
     """Return a known theme name, or None if this is not a real theme request."""
