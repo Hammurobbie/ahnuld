@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import gc
+import glob
 import json
+import subprocess
 import time
 import queue
 import re
@@ -10,7 +12,7 @@ from typing import Any
 
 from thefuzz import fuzz
 import sounddevice as sd
-from audio import play_audio
+from audio import play_audio, is_speaking
 from commands.cpu_mode import handle_cpu_mode
 from vosk import Model, KaldiRecognizer, SetLogLevel
 
@@ -42,6 +44,12 @@ wake_rec: Any = KaldiRecognizer(
 )
 wake_rec.SetWords(True)  # per-word confidence, used to reject marginal matches
 
+wake_model = None
+if config.WAKE_BACKEND == "model":
+    from commands.wakeword import HeyArnoldWake
+
+    wake_model = HeyArnoldWake(config.WAKE_MODEL_DIR)
+
 # Lights requests are re-decoded against theme names only. Open vocabulary turns
 # "sunset" and "boston" into whatever common words sound close.
 theme_rec: Any = KaldiRecognizer(
@@ -51,6 +59,17 @@ theme_rec: Any = KaldiRecognizer(
 )
 theme_rec.SetWords(True)
 
+sleep_rec: Any = KaldiRecognizer(
+    model,
+    config.SAMPLE_RATE,
+    json.dumps(
+        config.SLEEP_GRAMMAR_PHRASES
+        + config.WAKE_DECOYS
+        + config.THEME_GRAMMAR_FILLER
+        + ["[unk]"]
+    ),
+)
+
 q: queue.Queue[tuple[float, bytes]] = queue.Queue(maxsize=20)
 
 # Copy of the most recent mic audio, independent of q (which the recognizers drain).
@@ -58,10 +77,17 @@ _recent_audio: deque[tuple[float, bytes]] = deque(
     maxlen=int(config.THEME_AUDIO_SECONDS * config.SAMPLE_RATE / config.BLOCKSIZE) + 2
 )
 _awake_since = 0.0
+# Ignore the mic briefly after sleep so the wake that just fired cannot fire again.
+_deaf_until = 0.0
+
+_SLEEP_WORDS = frozenset({"sleep", "asleep"})
+_SLEEP_LEADS = frozenset({"go", "going", "gonna", "gotta", "got"})
 
 
 def callback(indata: Any, frames: int, time_: Any, status: Any) -> None:
     try:
+        if is_speaking():
+            return
         if status:
             pass
         now = time.time()
@@ -105,6 +131,99 @@ def _phrase_confidence(words: list[dict[str, Any]], phrase: str) -> float | None
     return None
 
 
+def _is_sleep_request(text: str) -> bool:
+    words = text.split()
+    for index, word in enumerate(words):
+        if word not in _SLEEP_WORDS:
+            continue
+        lead = set(words[max(0, index - 3):index])
+        if lead & _SLEEP_LEADS:
+            return True
+    return False
+
+
+_awake_khz: int | None = None
+_cpu_clock_broken = False
+
+
+def _cpu_max_path() -> str | None:
+    paths = sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_max_freq"))
+    return paths[0] if paths else None
+
+
+def _read_khz(path: str) -> int | None:
+    try:
+        with open(path) as fh:
+            return int(fh.read().strip())
+    except OSError:
+        return None
+
+
+def _remember_awake_khz() -> int:
+    # cpuinfo_max_freq, not the current cap. Sleep has often already lowered that.
+    global _awake_khz
+    if _awake_khz is None:
+        _awake_khz = _read_khz(
+            "/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq"
+        ) or 2_400_000
+    return _awake_khz
+
+
+def _sleep_khz() -> int:
+    mins = [
+        value
+        for path in sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_min_freq"))
+        if (value := _read_khz(path))
+    ]
+    return min(mins) if mins else 1_500_000
+
+
+def _set_cpu_max_khz(khz: int) -> None:
+    global _cpu_clock_broken
+    if _cpu_clock_broken:
+        return
+    path = _cpu_max_path()
+    if path is None or _read_khz(path) == khz:
+        return
+    payload = f"{khz}\n".encode()
+    try:
+        try:
+            with open(path, "wb") as fh:
+                fh.write(payload)
+        except OSError:
+            # -n: a password prompt here blocks the service forever.
+            result = subprocess.run(
+                ["sudo", "-n", "tee", path],
+                input=payload,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=2,
+                start_new_session=True,
+            )
+            if result.returncode != 0:
+                _cpu_clock_broken = True
+                err = result.stderr.decode(errors="replace").strip()
+                print(f"[cpu] could not set max clock to {khz // 1000} MHz: {err}", flush=True)
+                return
+        print(f"[cpu] max clock {khz // 1000} MHz", flush=True)
+    except Exception as exc:
+        _cpu_clock_broken = True
+        print(f"[cpu] could not set max clock to {khz // 1000} MHz: {exc}", flush=True)
+
+
+def _enter_sleep() -> None:
+    global _deaf_until
+    _set_cpu_max_khz(_sleep_khz())
+    if wake_model is not None:
+        wake_model.reset()
+    wake_rec.Reset()
+    sleep_rec.Reset()
+    with q.mutex:
+        q.queue.clear()
+    _deaf_until = time.time() + 3.0
+
+
 def process_sleep_mode(
     q: queue.Queue[tuple[float, bytes]],
     wake_rec: Any,
@@ -125,7 +244,27 @@ def process_sleep_mode(
     except queue.Empty:
         return False
 
-    if not data or not wake_rec.AcceptWaveform(data):
+    if not data:
+        return False
+
+    if config.WAKE_BACKEND == "model":
+        if time.time() < _deaf_until:
+            return False
+        score = wake_model.push_48k(data)
+        if score is None or score < config.WAKE_THRESHOLD:
+            if score is not None and score >= config.WAKE_LOG_THRESHOLD:
+                print(f"[wake] ignored score={score:.2f}", flush=True)
+            return False
+        print(f"[wake] woke score={score:.2f}", flush=True)
+        _set_cpu_max_khz(_remember_awake_khz())
+        lights.set_color("idle")
+        greet(lights, None, q)
+        _awake_since = time.time()
+        config.AWAKE = True
+        config.CPU_MODE = True
+        return True
+
+    if not wake_rec.AcceptWaveform(data):
         return False
 
     result = json.loads(wake_rec.Result())
@@ -140,6 +279,7 @@ def process_sleep_mode(
         return False
 
     print(f"[wake] woke on {text!r} conf={score:.2f}", flush=True)
+    _set_cpu_max_khz(_remember_awake_khz())
     lights.set_color("idle")
     greet(lights, None, q)
     _awake_since = time.time()
@@ -237,6 +377,28 @@ def _decode_theme() -> str | None:
     return theme
 
 
+def _grammar_hears_sleep() -> bool:
+    cutoff = max(time.time() - 4.0, _awake_since)
+    blocks = [data for timestamp, data in list(_recent_audio) if timestamp >= cutoff]
+    if not blocks:
+        return False
+
+    words: list[dict[str, Any]] = []
+    try:
+        for data in blocks:
+            if sleep_rec.AcceptWaveform(data):
+                words += json.loads(sleep_rec.Result()).get("result", [])
+        words += json.loads(sleep_rec.FinalResult()).get("result", [])
+    finally:
+        sleep_rec.Reset()
+
+    spoken = " ".join(word.get("word", "") for word in words)
+    heard = _is_sleep_request(spoken)
+    if heard:
+        print(f"[wake] sleep grammar heard {spoken!r}", flush=True)
+    return heard
+
+
 def _is_query(text: str) -> bool:
     return len(text) > 7 and len(text.split()) > 1
 
@@ -314,6 +476,13 @@ def process_awake_mode(
         if config.CPU_MODE:
             full_text = _accumulate_speech(q, rec, full_text)
 
+        if _is_sleep_request(full_text) or _grammar_hears_sleep():
+            print(f"[wake] sleep request from {full_text!r}", flush=True)
+            if config.CPU_MODE:
+                play_audio("investigations_over")
+            sleep(lights)
+            return True
+
         lights_clause, rest = _split_lights_clause(full_text)
         if lights_clause and _handle_lights_locally(lights_clause, lights):
             if not _is_query(rest):
@@ -348,8 +517,11 @@ def handle_commands(lights: LightsLike) -> None:
     config.LISTENING = True
     config.AWAKE = False
     last_command_time = time.time()
+    was_awake = False
 
     try:
+        _remember_awake_khz()
+        _set_cpu_max_khz(_sleep_khz())
         with sd.RawInputStream(
             samplerate=config.SAMPLE_RATE,
             blocksize=config.BLOCKSIZE,
@@ -360,9 +532,14 @@ def handle_commands(lights: LightsLike) -> None:
         ):
             while config.LISTENING:
                 if not config.AWAKE:
+                    if was_awake:
+                        _enter_sleep()
+                        was_awake = False
                     if process_sleep_mode(q, wake_rec, lights):
                         last_command_time = time.time()
+                        was_awake = True
                 else:
+                    was_awake = True
                     command_processed = process_awake_mode(lights, q, rec)
                     if command_processed:
                         last_command_time = time.time()
@@ -374,4 +551,5 @@ def handle_commands(lights: LightsLike) -> None:
     except Exception as e:
         throw_error(lights, e)
     finally:
+        _set_cpu_max_khz(_remember_awake_khz())
         gc.collect()

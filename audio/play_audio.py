@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import io
 import threading
+import time
 import soundfile as sf
 import sounddevice as sd
 from queue import Queue
@@ -16,6 +17,12 @@ OUTPUT_DEVICE_INDEX: int = config.OUTPUT_DEVICE_INDEX
 sd.default.device = (MIC_DEVICE_INDEX, OUTPUT_DEVICE_INDEX)
 
 audio_queue: Queue[tuple[str, bool] | None] = Queue()
+# Held through playback plus a short tail, so the mic misses his own voice.
+_speaking = threading.Event()
+
+
+def is_speaking() -> bool:
+    return _speaking.is_set()
 
 
 def audio_worker() -> None:
@@ -23,6 +30,7 @@ def audio_worker() -> None:
         item = audio_queue.get()
         if item is None:
             break
+        _speaking.set()
         try:
             file_path, is_full_path = item
 
@@ -46,6 +54,7 @@ def audio_worker() -> None:
             data, fs = sf.read(buf)
             sd.play(data, fs, device=OUTPUT_DEVICE_INDEX)
             sd.wait()
+            time.sleep(0.4)
 
             if is_full_path and os.path.exists(actual_path):
                 try:
@@ -58,6 +67,8 @@ def audio_worker() -> None:
             pass
         finally:
             audio_queue.task_done()
+            if audio_queue.empty():
+                _speaking.clear()
 
 threading.Thread(target=audio_worker, daemon=True, name="AudioWorker").start()
 

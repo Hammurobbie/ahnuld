@@ -72,9 +72,10 @@ def greet(
     try:
         options = ["hi", "howdy", "want"]
         play_audio(random.choice(options))
+        from audio.play_audio import audio_queue as speaker_queue
+        speaker_queue.join()
         if audio_queue:
             flush_queue(audio_queue)
-        time.sleep(2)
     except Exception as e:
         throw_error(lights, e)
 

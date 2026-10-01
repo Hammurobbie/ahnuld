@@ -6,6 +6,7 @@ hailort
 insightface
 numpy
 onnx
+onnxruntime
 picamera2
 psutil
 pywizlight

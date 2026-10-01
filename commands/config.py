@@ -56,6 +56,13 @@ WAKE_PHRASE: str = "hey arnold"
 # measured against the decoy grammar (0.45).
 WAKE_MIN_CONFIDENCE: float = 0.40
 
+# "vosk" is the old grammar recognizer, kept so sleep can be switched back.
+WAKE_BACKEND: str = "model"
+WAKE_MODEL_DIR: str = os.path.join(_ROOT, "audio", "wakeword")
+# One real wake on this mic scored 0.89. The same day's false wakes were 0.53–0.60.
+WAKE_THRESHOLD: float = 0.65
+WAKE_LOG_THRESHOLD: float = 0.30
+
 KNOWN_THEMES: list[str] = [
     "sleep",
     "read",
@@ -157,6 +164,15 @@ THEME_GRAMMAR_FILLER: list[str] = [
     "hey", "arnold", "turn", "on", "off", "the", "lights", "light", "set",
     "to", "put", "in", "please", "change", "make", "it", "theme", "mode",
     "can", "you", "switch", "and", "a",
+]
+
+# "gotta" is not in the small model. Listing it would be dropped, leaving a
+# bare "sleep", which matches on its own.
+SLEEP_GRAMMAR_PHRASES: list[str] = [
+    "go to sleep",
+    "got a sleep",
+    "got to sleep",
+    "going to sleep",
 ]
 
 # Awake-mode words that mark an utterance as a lights request.
